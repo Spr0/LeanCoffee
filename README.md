@@ -9,15 +9,15 @@ A free, realtime Lean Coffee meeting app for small teams (3 to 12 people) on a T
 
 ## Status
 
-| Phase                         | Gate                        | Status                                                                                                                   |
-| ----------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| 0 Repo and tooling            | CI green on an empty app    | Passed ([CI run](https://github.com/Spr0/LeanCoffee/actions/runs/40159127493))                                           |
-| 1 Database, RLS, RPCs         | pgTAP suite green           | Passed in CI ([run](https://github.com/Spr0/LeanCoffee/actions/runs/40161071337)) and applied to production (2026-10-25) |
-| 2 Core client and realtime    | Two-browser smoke           | Passed ([CI run](https://github.com/Spr0/LeanCoffee/actions/runs/40170418600))                                           |
-| 3 Session phases              | Six-browser full session    | Passed ([CI run](https://github.com/Spr0/LeanCoffee/actions/runs/40190087572))                                           |
-| 4 Export                      | Export and round-trip tests | Passed ([CI run](https://github.com/Spr0/LeanCoffee/actions/runs/40194387985))                                           |
-| 5 Hardening and accessibility | Security and a11y suites    | Passed ([CI run](https://github.com/Spr0/LeanCoffee/actions/runs/40198182297))                                           |
-| 6 Deploy                      | Production smoke            | Not started                                                                                                              |
+| Phase                         | Gate                        | Status                                                                                                                                                                                                          |
+| ----------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0 Repo and tooling            | CI green on an empty app    | Passed ([CI run](https://github.com/Spr0/LeanCoffee/actions/runs/40159127493))                                                                                                                                  |
+| 1 Database, RLS, RPCs         | pgTAP suite green           | Passed in CI ([run](https://github.com/Spr0/LeanCoffee/actions/runs/40161071337)) and applied to production (2026-10-25)                                                                                        |
+| 2 Core client and realtime    | Two-browser smoke           | Passed ([CI run](https://github.com/Spr0/LeanCoffee/actions/runs/40170418600))                                                                                                                                  |
+| 3 Session phases              | Six-browser full session    | Passed ([CI run](https://github.com/Spr0/LeanCoffee/actions/runs/40190087572))                                                                                                                                  |
+| 4 Export                      | Export and round-trip tests | Passed ([CI run](https://github.com/Spr0/LeanCoffee/actions/runs/40194387985))                                                                                                                                  |
+| 5 Hardening and accessibility | Security and a11y suites    | Passed ([CI run](https://github.com/Spr0/LeanCoffee/actions/runs/40198182297))                                                                                                                                  |
+| 6 Deploy                      | Production smoke            | Passed: full browser suite (12 tests) against the preview and production, 2026-10-25; keep-alive verified (Netlify function, and [GitHub Actions](https://github.com/Spr0/LeanCoffee/actions/runs/40218000441)) |
 
 ## Architecture
 
@@ -62,7 +62,9 @@ Word and Excel files are generated in the browser (`docx`, `exceljs`). CI checks
 
 ## Deployment
 
-Netlify builds every push from GitHub (`netlify.toml`): `npm run build`, then `scripts/check-dist-keys.mjs` scans the real bundle for privileged keys. Production is `main`; other branches get branch-deploy previews at `https://<branch>--leancoffee-app.netlify.app` (slashes become dashes).
+Netlify builds every push from GitHub (`netlify.toml`): `npm run build`, then `scripts/check-dist-keys.mjs` scans the real bundle for privileged keys. Production is `main`; other branches get branch-deploy previews at `https://<branch>--leancoffee-app.netlify.app` (slashes become dashes; Netlify setting: Branch deploys, All).
+
+`main` is protected by a GitHub ruleset: the four CI jobs must pass on the commit, and force pushes and deletion are blocked. Work happens on a branch; once CI and the preview suite pass, `main` is fast-forwarded to that commit.
 
 | Netlify environment variable    | Scopes | Value                                            |
 | ------------------------------- | ------ | ------------------------------------------------ |
@@ -71,10 +73,10 @@ Netlify builds every push from GitHub (`netlify.toml`): `npm run build`, then `s
 
 The build fails if `VITE_SUPABASE_URL` is missing, because the security headers (`dist/_headers`) are generated from it.
 
-Before promoting to production, run the browser suite against the preview:
+Before promoting to production, run the whole browser suite against the preview (about 4 minutes; it creates a few test boards in the production database, which the daily purge removes after 7 days):
 
 ```sh
-E2E_BASE_URL=https://<branch>--leancoffee-app.netlify.app npx playwright test e2e/smoke.spec.ts e2e/security.spec.ts e2e/two-browsers.spec.ts
+E2E_BASE_URL=https://<branch>--leancoffee-app.netlify.app npx playwright test
 ```
 
 ## Keeping the free database awake
