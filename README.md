@@ -16,7 +16,7 @@ A free, realtime Lean Coffee meeting app for small teams (3 to 12 people) on a T
 | 2 Core client and realtime    | Two-browser smoke           | Passed ([CI run](https://github.com/Spr0/LeanCoffee/actions/runs/40170418600))                                           |
 | 3 Session phases              | Six-browser full session    | Passed ([CI run](https://github.com/Spr0/LeanCoffee/actions/runs/40190087572))                                           |
 | 4 Export                      | Export and round-trip tests | Passed ([CI run](https://github.com/Spr0/LeanCoffee/actions/runs/40194387985))                                           |
-| 5 Hardening and accessibility | Security and a11y suites    | Not started                                                                                                              |
+| 5 Hardening and accessibility | Security and a11y suites    | Passed ([CI run](https://github.com/Spr0/LeanCoffee/actions/runs/40198182297))                                           |
 | 6 Deploy                      | Production smoke            | Not started                                                                                                              |
 
 ## Architecture
