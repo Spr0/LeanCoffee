@@ -55,3 +55,7 @@ Never put a `service_role` or `sb_secret_` key in the repo, the browser bundle, 
 | `npm run db:test`   | pgTAP against a local Supabase stack (`npx supabase start` first) |
 
 CI (`.github/workflows/ci.yml`) runs all of these plus `npm audit --audit-level=high` and a full-history gitleaks scan.
+
+## Export caveat
+
+Word and Excel files are generated in the browser (`docx`, `exceljs`). CI checks them by reading them back and converting them with headless LibreOffice; real Microsoft Word and Excel were not available in CI. Open one sample of each in Word and Excel before relying on them. CI keeps samples as the `export-samples` artifact.

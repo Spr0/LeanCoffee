@@ -1,4 +1,6 @@
 import { useState, type FormEvent } from 'react'
+import { download, previewName } from '../../lib/export/download'
+import type { BoardData } from '../../state/useBoard'
 import { ClockPanel } from '../../components/session/Clock'
 import { Avatar, Button } from '../../components/ui'
 import { cards } from '../../lib/session'
@@ -171,16 +173,7 @@ export default function WrapUp({ ctx, remaining }: PhaseProps) {
               note="A soft clock. The session ends when the facilitator ends it."
             />
           )}
-          <div>
-            <h2 className="text-[20px] font-bold">Download the results</h2>
-            <p className="mt-1 text-[14px] text-muted">
-              Word and Excel downloads arrive in the next build step.
-            </p>
-            <div className="mt-3 flex flex-col gap-2">
-              <Button disabled>Download Word file</Button>
-              <Button disabled>Download Excel file</Button>
-            </div>
-          </div>
+          <Downloads data={board.data} />
           {isFacilitator && !ended && (
             <div>
               <Button
@@ -198,5 +191,64 @@ export default function WrapUp({ ctx, remaining }: PhaseProps) {
         </>
       }
     />
+  )
+}
+
+const FILES = [
+  {
+    kind: 'docx',
+    title: 'Word summary (.docx)',
+    detail: 'Topics discussed with votes, take-aways, and actions with owners',
+    label: 'Download Word file',
+  },
+  {
+    kind: 'xlsx',
+    title: 'Excel workbook (.xlsx)',
+    detail: 'Three sheets: Topics and votes, Actions, Take-aways',
+    label: 'Download Excel file',
+  },
+] as const
+
+function Downloads({ data }: { data: BoardData }) {
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  return (
+    <div>
+      <h2 className="text-[20px] font-bold">Download the results</h2>
+      <p className="mt-1 text-[14px] text-muted">
+        Files open in Word and Excel on Windows. Anyone in the session can download them.
+      </p>
+      <div className="mt-3 flex flex-col gap-3">
+        {FILES.map((f) => (
+          <div key={f.kind} className="rounded-xl border border-line-soft bg-panel p-4">
+            <p className="text-[16px] font-bold">{f.title}</p>
+            <p className="text-[14px] text-muted">{f.detail}</p>
+            <p className="mt-1 text-[13px] text-muted">{previewName(data, f.kind)}</p>
+            <Button
+              className="mt-3 w-full"
+              disabled={busy !== null}
+              onClick={async () => {
+                setBusy(f.kind)
+                setError(null)
+                try {
+                  await download(f.kind, data)
+                } catch {
+                  setError('Could not build the file. Try again.')
+                } finally {
+                  setBusy(null)
+                }
+              }}
+            >
+              {busy === f.kind ? 'Preparing…' : f.label}
+            </Button>
+          </div>
+        ))}
+      </div>
+      {error && (
+        <p role="alert" className="mt-2 text-[14px] font-bold text-danger">
+          {error}
+        </p>
+      )}
+    </div>
   )
 }

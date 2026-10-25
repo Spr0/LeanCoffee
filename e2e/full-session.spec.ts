@@ -194,6 +194,21 @@ test('six people run a whole session', async ({ browser }) => {
   await expect(fran.getByText('Passed.')).toBeVisible()
   await expect(fran.getByText('2 of 9')).toBeVisible()
   await axe(fran)
+  for (const [label, ext] of [
+    ['Download Word file', 'docx'],
+    ['Download Excel file', 'xlsx'],
+  ] as const) {
+    const [file] = await Promise.all([
+      pat.waitForEvent('download'),
+      pat.getByRole('button', { name: label }).click(),
+    ])
+    expect(file.suggestedFilename()).toMatch(
+      new RegExp(`^E2E full session \\d+ \\d{4}-\\d{2}-\\d{2}\\.${ext}$`),
+    )
+    expect((await file.path()) ?? '').not.toBe('')
+  }
   await fran.getByRole('button', { name: 'End session' }).click()
+  // Downloads stay available after the session ends.
+  await expect(pat.getByRole('button', { name: 'Download Word file' })).toBeEnabled()
   await expect(pat.getByRole('heading', { name: 'This session has ended' })).toBeVisible()
 })
