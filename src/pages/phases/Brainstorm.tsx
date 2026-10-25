@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { ClockPanel } from '../../components/session/Clock'
 import { Button } from '../../components/ui'
 import { chime } from '../../lib/chime'
+import { callWhenDue } from '../../lib/retry'
 import { useAtZero } from '../../state/useCountdown'
 import { Eyebrow, Layout, PageTitle, TimerButtons, type PhaseProps } from './common'
 
@@ -20,14 +21,17 @@ export default function Brainstorm({ ctx, remaining }: PhaseProps) {
 
   useAtZero(remaining, state.phase_ends_at, () => {
     chime()
-    // The facilitator's browser closes the phase when the clock ends.
-    if (isFacilitator) void act('start_phase', { p_board: state.board_id, p_phase: 'clarify' })
+    // Any browser closes the phase when the clock ends; the server checks the deadline.
+    callWhenDue('close_brainstorm', { p_board: state.board_id })
   })
 
   async function add(e?: FormEvent) {
     e?.preventDefault()
     if (!text.trim() || full) return
-    if (await act('add_topic', { p_board: state.board_id, p_text: text })) setText('')
+    // Clear at once so a slow reply cannot wipe the next topic being typed.
+    const draft = text
+    setText('')
+    if (!(await act('add_topic', { p_board: state.board_id, p_text: draft }))) setText(draft)
   }
 
   return (
@@ -68,7 +72,7 @@ export default function Brainstorm({ ctx, remaining }: PhaseProps) {
               className="mt-2 w-full resize-none rounded-xl border-2 border-teal bg-panel p-3 text-[17px] disabled:border-line"
             />
             <div className="mt-3 flex items-center justify-between gap-3">
-              <p className="text-[13px] text-muted" aria-live="polite">
+              <p className="text-[13px] text-muted">
                 {text.length} of {MAX} characters · Press Enter to add
               </p>
               <Button type="submit" disabled={full || !text.trim()}>

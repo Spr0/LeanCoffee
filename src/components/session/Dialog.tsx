@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 
 /** Native modal dialog: focus moves in, Escape closes, focus returns to the opener. */
 export function Dialog({
@@ -13,6 +13,7 @@ export function Dialog({
   children: ReactNode
 }) {
   const ref = useRef<HTMLDialogElement>(null)
+  const titleId = useId()
   useEffect(() => {
     const d = ref.current
     if (!d) return
@@ -23,10 +24,10 @@ export function Dialog({
     <dialog
       ref={ref}
       onClose={onClose}
-      aria-labelledby="dialog-title"
+      aria-labelledby={titleId}
       className="m-auto w-[min(560px,calc(100vw-32px))] rounded-2xl bg-panel p-8 text-ink backdrop:bg-black/50"
     >
-      <h2 id="dialog-title" className="text-[26px] font-extrabold">
+      <h2 id={titleId} className="text-[26px] font-extrabold">
         {title}
       </h2>
       {children}

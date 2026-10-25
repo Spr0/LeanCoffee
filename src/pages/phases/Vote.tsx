@@ -1,11 +1,12 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { ClockPanel } from '../../components/session/Clock'
 import { Button } from '../../components/ui'
-import { cards, dotTotals, myDots, myDotsUsed, tieGroups } from '../../lib/session'
-import { rpc } from '../../lib/supabase'
-import { formatClock } from '../../lib/time'
+import { callWhenDue } from '../../lib/retry'
+import { cards, dotTotals, myDots, myDotsUsed } from '../../lib/session'
+import { formatClock, isPresent } from '../../lib/time'
 import type { Topic } from '../../lib/types'
 import { useAtZero } from '../../state/useCountdown'
+import { useNow } from '../../state/useNow'
 import { Check, Eyebrow, Layout, PageTitle, TimerButtons, type PhaseProps } from './common'
 
 function omit(record: Record<string, number>, key: string): Record<string, number> {
@@ -33,13 +34,17 @@ export default function Vote({ ctx, remaining }: PhaseProps) {
   const budget = tieRound ? 1 : state.settings.dots
   const used = myDotsUsed(votes, userId, state.vote_round)
   const me = participants.find((p) => p.user_id === userId)
-  const finishedCount = participants.filter((p) => p.finished_voting).length
+  const now = useNow(5000)
+  // Matches the server: only people seen in the last 45 s count toward "everyone finished".
+  const present = participants.filter((p) => isPresent(p.last_seen_at, now, board.offsetMs))
+  const finishedCount = present.filter((p) => p.finished_voting).length
+  const revote = state.base_round > 0 && !tieRound
   const open = cards(board.data.topics).filter((t) => t.status === 'open')
   const ballot = tieRound ? open.filter((t) => state.tie_topic_ids.includes(t.id)) : open
 
   // When the clock runs out, any browser may ask the server to reveal; it checks the deadline.
   useAtZero(remaining, state.phase_ends_at, () => {
-    if (!revealed) rpc('reveal_votes', { p_board: state.board_id }).catch(() => {})
+    if (!revealed) callWhenDue('reveal_votes', { p_board: state.board_id })
   })
 
   // Optimistic dots per topic: each click builds on the last value sent, not on whatever the
@@ -72,14 +77,14 @@ export default function Vote({ ctx, remaining }: PhaseProps) {
     <>
       <ClockPanel
         title={tieRound ? 'Tie-break clock' : 'Voting clock'}
-        remaining={revealed ? 0 : remaining}
-        totalMs={(tieRound ? 30 : state.settings.vote_s) * 1000}
+        remaining={revealed ? null : remaining}
+        totalMs={(tieRound ? 30 : revote ? 60 : state.settings.vote_s) * 1000}
         paused={state.paused_remaining_ms !== null}
       />
       <div>
-        <Eyebrow right={`${finishedCount} of ${participants.length}`}>Who has finished</Eyebrow>
+        <Eyebrow right={`${finishedCount} of ${present.length}`}>Who has finished</Eyebrow>
         <ul className="mt-2">
-          {participants.map((p) => (
+          {present.map((p) => (
             <li key={p.id} className="flex items-center justify-between py-1.5 text-[16px]">
               <span className={p.finished_voting ? '' : 'text-muted'}>
                 {p.display_name}
@@ -151,7 +156,7 @@ export default function Vote({ ctx, remaining }: PhaseProps) {
           <ul className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {ballot.map((t) => {
               const mine = dotsOn(t.id)
-              const own = t.author_user_id === userId && !state.settings.own_vote && !tieRound
+              const own = t.author_user_id === userId && !state.settings.own_vote
               return (
                 <li
                   key={t.id}
@@ -222,7 +227,14 @@ function Results({ ctx, side }: { ctx: PhaseProps['ctx']; side: ReactNode }) {
   const { board, state, isFacilitator, act } = ctx
   const open = cards(board.data.topics).filter((t) => t.status === 'open')
   const main = dotTotals(board.data.votes, state.base_round)
-  const groups = tieGroups(open, main)
+  // Tie-round dots break ties: topics stay tied only if both totals match.
+  const tie = new Map<string, number>()
+  for (const v of board.data.votes)
+    if (v.round > state.base_round) tie.set(v.topic_id, (tie.get(v.topic_id) ?? 0) + v.dots)
+  const key = (id: string) => `${main.get(id) ?? 0}/${tie.get(id) ?? 0}`
+  const byKey = new Map<string, Topic[]>()
+  for (const t of open) byKey.set(key(t.id), [...(byKey.get(key(t.id)) ?? []), t])
+  const groups = [...byKey.values()].filter((g) => g.length > 1)
   const tied = new Set(groups.flat().map((t) => t.id))
   const move = (index: number, delta: number) => {
     const ids = open.map((t) => t.id)
@@ -240,7 +252,7 @@ function Results({ ctx, side }: { ctx: PhaseProps['ctx']; side: ReactNode }) {
         <>
           <PageTitle
             title="Here is the agenda"
-            intro="Topics are ordered by dots. Ties keep the order they were written in."
+            intro="Topics are ordered by dots, then by any tie-break."
           />
           {isFacilitator && groups.length > 0 && (
             <div className="mt-5 flex flex-wrap items-center gap-3 rounded-xl border border-line p-4">
@@ -296,9 +308,12 @@ function Results({ ctx, side }: { ctx: PhaseProps['ctx']; side: ReactNode }) {
                 )}
                 <span
                   className="text-[17px] font-extrabold"
-                  aria-label={`${main.get(t.id) ?? 0} dots`}
+                  aria-label={`${main.get(t.id) ?? 0} dots${tie.has(t.id) ? `, plus ${tie.get(t.id)} in the tie-break` : ''}`}
                 >
                   {main.get(t.id) ?? 0}
+                  {tie.has(t.id) && (
+                    <span className="ml-1 text-[14px] text-muted">+{tie.get(t.id)} tie</span>
+                  )}
                 </span>
                 {isFacilitator && (
                   <span className="flex gap-1">

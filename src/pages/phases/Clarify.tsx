@@ -55,7 +55,8 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
           )}
           {list.length === 0 ? (
             <p className="mt-8 rounded-xl bg-surface p-6 text-[17px]">
-              Nobody added a topic. Move on to Discuss to add topics there, or end the session.
+              Nobody added a topic. Continue to voting and on to Discuss, where anyone can add
+              topics to the queue.
             </p>
           ) : (
             <ul className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">

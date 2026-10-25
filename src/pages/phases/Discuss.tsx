@@ -11,8 +11,8 @@ import {
   sessionMinutesLeft,
   topicsThatFit,
 } from '../../lib/session'
-import { rpc } from '../../lib/supabase'
-import { formatClock } from '../../lib/time'
+import { callWhenDue } from '../../lib/retry'
+import { formatClock, isPresent } from '../../lib/time'
 import type { ExtendVote } from '../../lib/types'
 import { useAtZero } from '../../state/useCountdown'
 import { useNow } from '../../state/useNow'
@@ -42,10 +42,15 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
   const round = openRound(extendRounds, state.current_topic_id)
   const last = lastRound(extendRounds, state.current_topic_id)
   const minutesLeft = sessionMinutesLeft(state, nowServer)
+  // The topic on stage still needs its remaining time before the next one can start.
   const fit =
     minutesLeft === null
       ? null
-      : topicsThatFit(minutesLeft, state.settings.discuss_s, state.settings.wrapup_s)
+      : topicsThatFit(
+          minutesLeft - (current ? (remaining ?? 0) / 60_000 : 0),
+          state.settings.discuss_s,
+          state.settings.wrapup_s,
+        )
   const totalMs =
     (current && current.extensions > 0 ? state.settings.extend_s : state.settings.discuss_s) * 1000
   const roundLeft = round ? Math.max(0, Date.parse(round.closes_at) - nowServer) : null
@@ -57,11 +62,11 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
   // At zero: chime, and any browser may open the extend vote (the server checks the deadline).
   useAtZero(remaining, current ? state.phase_ends_at : null, () => {
     chime()
-    rpc('open_extend_round', { p_board: state.board_id }).catch(() => {})
+    callWhenDue('open_extend_round', { p_board: state.board_id })
   })
   // When the 15-second window closes, any browser may ask the server to resolve it.
   useAtZero(roundLeft, round?.id ?? null, () => {
-    if (round) rpc('resolve_extend_round', { p_round: round.id }).catch(() => {})
+    if (round) callWhenDue('resolve_extend_round', { p_round: round.id })
   })
 
   const toggle = (
@@ -366,6 +371,7 @@ function ExtendPanel({
   roundLeft: number | null
 }) {
   const { board, state, userId, isFacilitator, act } = ctx
+  const now = useNow(5000)
   const round = board.data.extendRounds.find((r) => r.id === roundId)
   if (!round) return null
   const closed = round.closed_at !== null
@@ -375,15 +381,19 @@ function ExtendPanel({
     neutral: round.neutral_count,
     move_on: round.move_on_count,
   }
-  const present = board.data.participants.length
+  const present = board.data.participants.filter((p) =>
+    isPresent(p.last_seen_at, now, board.offsetMs),
+  ).length
   return (
     <section aria-label="Extend vote" className="rounded-2xl border-2 border-teal bg-panel p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-[24px] font-extrabold">Keep talking about this?</h2>
-        <p className="text-[16px] font-bold" aria-live="polite">
-          {closed
-            ? 'Voting closed'
-            : `${round.votes_cast} of ${present} voted · closes in ${formatClock(roundLeft ?? 0)}`}
+        {/* Only the vote count is announced; the per-second countdown is not. */}
+        <p className="text-[16px] font-bold">
+          <span aria-live="polite">
+            {closed ? 'Voting closed' : `${round.votes_cast} of ${present} voted`}
+          </span>
+          {!closed && ` · closes in ${formatClock(roundLeft ?? 0)}`}
         </p>
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-3">
@@ -396,7 +406,12 @@ function ExtendPanel({
             onClick={() => act('cast_extend_vote', { p_round: roundId, p_choice: c.value })}
             className={`flex min-h-14 items-center justify-between rounded-xl border-2 px-4 text-[17px] font-bold disabled:cursor-default ${mine?.choice === c.value ? 'border-teal bg-teal-soft' : 'border-line'}`}
           >
-            <span>{c.label}</span>
+            <span>
+              {c.label}
+              {mine?.choice === c.value && (
+                <span className="ml-2 text-[14px] text-teal">✓ Your vote</span>
+              )}
+            </span>
             {/* Tallies stay hidden until the round closes; nothing about them is in the page before then. */}
             <span className="text-[22px] font-extrabold">{closed ? counts[c.value] : '?'}</span>
           </button>

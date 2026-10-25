@@ -116,7 +116,7 @@ test('six people run a whole session', async ({ browser }) => {
     await expect(page.getByText('Counts hidden until reveal')).toBeVisible()
     for (const t of plan[name] ?? [])
       await page.getByRole('button', { name: `Add a dot to "${t}"` }).click()
-    await expect(page.getByText('0 left')).toBeVisible()
+    await expect(page.getByText('0 left', { exact: true })).toBeVisible()
     if (name !== 'Tess') await page.getByRole('button', { name: "I'm done" }).click()
   }
   // Before the last person finishes, Pat has received only Pat's own vote rows.
