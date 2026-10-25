@@ -56,10 +56,10 @@ jobs:
           tar xzf gitleaks.tgz gitleaks
       - run: ./gitleaks git --no-banner --redact -v .
 
-  database:
-    name: Database and RLS tests (pgTAP on local Supabase)
+  integration:
+    name: Database tests and end-to-end (local Supabase)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -67,7 +67,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - name: Start Supabase (database, auth, realtime only)
+      - name: Start Supabase (database, auth, realtime, API)
         run: npx supabase start -x studio,imgproxy,storage-api,edge-runtime,logflare,vector,mailpit,postgres-meta,supavisor
       - name: Apply migrations from scratch
         run: npx supabase db reset
@@ -85,20 +85,13 @@ jobs:
             echo "::warning title=supabase db lint::$msg"
           fi
           exit $code
-
-  e2e:
-    name: End-to-end smoke (Playwright, axe)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
+      - name: Point the app at the local stack
+        run: |
+          eval "$(npx supabase status -o env)"
+          printf 'VITE_SUPABASE_URL=%s\nVITE_SUPABASE_PUBLISHABLE_KEY=%s\n' "$API_URL" "$ANON_KEY" > .env.local
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      - name: End-to-end (Playwright, axe, realtime isolation)
+        run: npm run test:e2e
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

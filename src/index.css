@@ -5,25 +5,56 @@
 
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
-@theme {
+@theme inline {
   --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --color-ground: var(--ground);
+  --color-surface: var(--surface);
+  --color-panel: var(--panel);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+  --color-line-strong: var(--line-strong);
+  --color-teal: var(--teal);
+  --color-teal-soft: var(--teal-soft);
+  --color-on-teal: var(--on-teal);
+  --color-urgent: var(--urgent);
+  --color-danger: var(--danger);
 }
 
+/* Design tokens from the brief. Dark values derived so every text pair meets WCAG AA. */
 :root {
+  --ground: #ffffff;
+  --surface: #f3f5f4;
+  --panel: #ffffff;
   --ink: #1e2a28;
   --muted: #55625f;
+  --line: #d5dddb;
+  --line-soft: #e1e7e5;
+  --line-strong: #8a9894;
   --teal: #0f766e;
   --teal-soft: #d9f0ec;
-  --surface: #f3f5f4;
-  --ground: #ffffff;
+  --on-teal: #ffffff;
   --urgent: #c2410c;
+  --danger: #b91c1c;
+  color-scheme: light;
 }
 
 [data-theme='dark'] {
+  --ground: #12151b;
+  --surface: #1a1f28;
+  --panel: #1a1f28;
   --ink: #eef0f4;
   --muted: #a4adbb;
-  --surface: #1a1f28;
-  --ground: #12151b;
+  --line: #2b3340;
+  --line-soft: #232a35;
+  --line-strong: #5b6678;
+  --teal: #2dd4bf;
+  --teal-soft: #143a36;
+  --on-teal: #05201d;
+  --urgent: #f5b544;
+  --danger: #ff8a7a;
+  color-scheme: dark;
 }
 
 body {
@@ -31,6 +62,13 @@ body {
   background: var(--ground);
   color: var(--ink);
   font-family: var(--font-sans);
+  font-weight: 500;
+}
+
+/* Heavy focus ring: survives Teams screen-share compression. */
+:focus-visible {
+  outline: 3px solid var(--teal);
+  outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {
