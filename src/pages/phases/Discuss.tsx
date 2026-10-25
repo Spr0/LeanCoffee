@@ -1,10 +1,11 @@
-import { useState, type FormEvent } from 'react'
+import { useId, useState, type FormEvent } from 'react'
 import { RingTimer } from '../../components/session/Clock'
 import { Button } from '../../components/ui'
 import { chime } from '../../lib/chime'
 import {
   cards,
   dotTotals,
+  extendOutcome,
   formatDuration,
   lastRound,
   openRound,
@@ -17,7 +18,9 @@ import type { ExtendVote } from '../../lib/types'
 import { useAtZero } from '../../state/useCountdown'
 import { useNow } from '../../state/useNow'
 import BoardTab from './BoardTab'
-import { Check, Eyebrow, Layout, type PhaseProps } from './common'
+import { Check, Eyebrow, Layout, TimerButtons, type PhaseProps } from './common'
+import { OwnerField, ownerName } from './OwnerField'
+import { BringBack, TOPIC_MAX } from './TopicTools'
 
 const CHOICES: { value: ExtendVote['choice']; label: string }[] = [
   { value: 'keep', label: 'Keep going' },
@@ -31,10 +34,12 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
   const { board, state, isFacilitator, act } = ctx
   const { topics, extendRounds, actions, participants } = board.data
   const [view, setView] = useState<'stage' | 'board'>('stage')
+  const [note, setNote] = useState('')
   const now = useNow(1000)
   const nowServer = now + board.offsetMs
   const current = topics.find((t) => t.id === state.current_topic_id)
   const queue = cards(topics).filter((t) => t.status === 'open')
+  const skipped = cards(topics).filter((t) => t.status === 'skipped')
   const discussed = topics
     .filter((t) => t.status === 'discussed')
     .sort((a, b) => (a.discussed_seq ?? 0) - (b.discussed_seq ?? 0))
@@ -132,7 +137,7 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
             className="mt-5 rounded-2xl border border-line-soft bg-panel p-6 xl:p-8"
           >
             <div className={shownRound ? '' : 'flex flex-wrap items-center justify-between gap-8'}>
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 grow basis-72">
                 <div className="flex gap-2">
                   <span className="rounded-md bg-teal-soft px-2.5 py-1 text-[14px] font-extrabold tracking-[0.08em] text-teal">
                     DISCUSSING NOW
@@ -180,24 +185,7 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
 
           {isFacilitator && (
             <div className="mt-4 flex flex-wrap gap-2">
-              {state.phase_ends_at || state.paused_remaining_ms !== null ? (
-                <Button
-                  variant="secondary"
-                  onClick={() =>
-                    act(state.paused_remaining_ms !== null ? 'timer_resume' : 'timer_pause', {
-                      p_board: state.board_id,
-                    })
-                  }
-                >
-                  {state.paused_remaining_ms !== null ? 'Resume' : 'Pause'}
-                </Button>
-              ) : null}
-              <Button
-                variant="secondary"
-                onClick={() => act('timer_adjust', { p_board: state.board_id, p_delta_s: 60 })}
-              >
-                +1 min
-              </Button>
+              <TimerButtons ctx={ctx} />
               {!round && (
                 <Button
                   variant="secondary"
@@ -253,7 +241,7 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
           {queue[0] ? (
             <>
               <p className="text-[14px] font-bold tracking-[0.1em] text-muted">UP NEXT</p>
-              <h2 className="mt-3 text-[44px] leading-tight font-extrabold">{queue[0].text}</h2>
+              <h1 className="mt-3 text-[44px] leading-tight font-extrabold">{queue[0].text}</h1>
               <p className="mt-2 text-[18px] text-muted">Raised by {queue[0].author_name}</p>
               {isFacilitator ? (
                 <div className="mt-6 flex flex-wrap gap-2">
@@ -350,6 +338,25 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
         </ol>
         {!state.topics_locked && <ParkingLot ctx={ctx} />}
       </div>
+      {skipped.length > 0 && (
+        <div>
+          <Eyebrow right={`${skipped.length}`}>Skipped</Eyebrow>
+          <ul className="mt-2 flex flex-col gap-2">
+            {skipped.map((t) => (
+              <li
+                key={t.id}
+                className="flex items-center gap-2 rounded-xl border-2 border-dashed border-line bg-panel p-3"
+              >
+                <span className="flex-1 text-[15px] break-words">{t.text}</span>
+                {isFacilitator && <BringBack ctx={ctx} topic={t} onBack={setNote} />}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <p role="status" className="sr-only">
+        {note}
+      </p>
       {discussed.length > 0 && (
         <div>
           <Eyebrow>Discussed</Eyebrow>
@@ -399,6 +406,8 @@ function ExtendPanel({
   const round = board.data.extendRounds.find((r) => r.id === roundId)
   if (!round) return null
   const closed = round.closed_at !== null
+  // "Extend anyway" keeps the group's counts but sets the result, so the counts tell who decided.
+  const groupExtended = extendOutcome(round.keep_count ?? 0, round.move_on_count ?? 0) === 'extend'
   const mine = board.data.extendVotes.find((v) => v.round_id === roundId && v.user_id === userId)
   const counts = {
     keep: round.keep_count,
@@ -444,9 +453,9 @@ function ExtendPanel({
       {closed && (
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <p className="flex-1 text-[17px] font-bold" role="status">
-            {round.result === 'extend'
-              ? `The group chose to keep going: ${formatClock(state.settings.extend_s * 1000)} added.`
-              : 'The group chose to move on.'}
+            {round.result !== 'extend'
+              ? 'The group chose to move on.'
+              : `${groupExtended ? 'The group chose to keep going' : 'The facilitator extended it'}: ${formatClock(state.settings.extend_s * 1000)} added.`}
           </p>
         </div>
       )}
@@ -479,11 +488,13 @@ function ActionsFor({
       await act('add_action', {
         p_board: state.board_id,
         p_text: text,
-        p_owner_name: owner || null,
+        p_owner_name: ownerName(owner),
         p_topic: topicId,
       })
-    )
+    ) {
       setText('')
+      setOwner('')
+    }
   }
   return (
     <div className="mt-6">
@@ -495,21 +506,14 @@ function ActionsFor({
           maxLength={140}
           onChange={(e) => setText(e.target.value)}
           placeholder="Add an action, such as: Ana to share her prompt library"
-          className="h-12 min-w-0 flex-1 rounded-xl border-2 border-line bg-panel px-3 text-[16px]"
+          className="h-12 min-w-0 grow basis-60 rounded-xl border-2 border-line bg-panel px-3 text-[16px]"
         />
-        <select
-          aria-label="Action owner"
+        <OwnerField
           value={owner}
-          onChange={(e) => setOwner(e.target.value)}
-          className="h-12 rounded-xl border-2 border-line bg-panel px-3 text-[15px] font-bold"
-        >
-          <option value="">No owner</option>
-          {board.data.participants.map((p) => (
-            <option key={p.id} value={p.display_name}>
-              Owner: {p.display_name}
-            </option>
-          ))}
-        </select>
+          onChange={setOwner}
+          people={board.data.participants}
+          className="h-12 rounded-xl"
+        />
         <Button type="submit" className="h-12">
           Add action
         </Button>
@@ -536,26 +540,33 @@ function ActionsFor({
 function ParkingLot({ ctx }: { ctx: PhaseProps['ctx'] }) {
   const { state, act } = ctx
   const [text, setText] = useState('')
+  const countId = useId()
   return (
     <form
-      className="mt-2 flex gap-2"
+      className="mt-2"
       onSubmit={async (e) => {
         e.preventDefault()
         if (text.trim() && (await act('add_topic', { p_board: state.board_id, p_text: text })))
           setText('')
       }}
     >
-      <input
-        aria-label="Add a topic to the end of the queue"
-        value={text}
-        maxLength={160}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="Add a topic"
-        className="h-11 min-w-0 flex-1 rounded-lg border-2 border-line bg-panel px-3 text-[15px]"
-      />
-      <Button type="submit" variant="secondary">
-        Add
-      </Button>
+      <div className="flex gap-2">
+        <input
+          aria-label="Add a topic to the end of the queue"
+          aria-describedby={countId}
+          value={text}
+          maxLength={TOPIC_MAX}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Add a topic"
+          className="h-11 min-w-0 flex-1 rounded-lg border-2 border-line bg-panel px-3 text-[15px]"
+        />
+        <Button type="submit" variant="secondary">
+          Add
+        </Button>
+      </div>
+      <p id={countId} className="mt-1 text-[13px] text-muted">
+        {text.length} of {TOPIC_MAX} characters
+      </p>
     </form>
   )
 }
