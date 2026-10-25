@@ -10,7 +10,7 @@ AS=""
 [ "$(id -u)" = 0 ] && AS="runuser -u postgres --"
 if ! $AS "$PGBIN/pg_ctl" -D "$DATA" status >/dev/null 2>&1; then
   rm -rf "$DATA" "$DATA.log"
-  $AS "$PGBIN/initdb" -D "$DATA" -U postgres -A trust >/dev/null
+  $AS "$PGBIN/initdb" -D "$DATA" -U postgres -A trust -E UTF8 --locale=C.UTF-8 >/dev/null
   $AS "$PGBIN/pg_ctl" -D "$DATA" -o "-p $PORT -k /tmp" -l "$DATA.log" start >/dev/null
 fi
 export PGHOST=/tmp PGPORT=$PORT PGUSER=postgres
@@ -22,7 +22,7 @@ fail=0
 for t in supabase/tests/*.sql; do
   out=$(psql -X -d lc -At -f "$t" 2>&1) || true
   if echo "$out" | grep -qE '^not ok|ERROR|Looks like'; then
-    fail=1; echo "FAIL $t"; echo "$out" | grep -E '^not ok|ERROR|#|Looks like' | head -40
+    fail=1; echo "FAIL $t"; echo "$out" | grep -E '^not ok|ERROR|#|Looks like' | head -12
   else
     echo "ok   $t ($(echo "$out" | grep -c '^ok') assertions)"
   fi

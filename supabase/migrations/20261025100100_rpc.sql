@@ -75,7 +75,11 @@ language sql immutable
 set search_path = ''
 as $$
   select btrim(regexp_replace(
-    regexp_replace(coalesce(p, ''), '[[:cntrl:]​-‏‪-‮⁦-⁩﻿]', '', 'g'),
+    regexp_replace(coalesce(p, ''),
+      -- Control chars, zero-width U+200B-200F, bidi embeddings and overrides U+202A-202E and
+      -- U+2066-2069, BOM U+FEFF. Built with chr() so the source has no invisible characters.
+      '[[:cntrl:]' || chr(8203) || '-' || chr(8207) || chr(8234) || '-' || chr(8238)
+        || chr(8294) || '-' || chr(8297) || chr(65279) || ']', '', 'g'),
     '\s+', ' ', 'g'));
 $$;
 
