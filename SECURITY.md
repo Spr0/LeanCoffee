@@ -34,6 +34,7 @@ Contact the owner directly. Do not open a public GitHub issue for a vulnerabilit
 | Failed lookup and passcode attempts (identity and time only)   | Supabase `failed_attempts`                                   | 1 day                                                                                      |
 | Anonymous sign-in identities                                   | Supabase Auth                                                | Deleted after 14 days if they no longer belong to any live board                           |
 | Theme, sound setting, the creator's recovery link              | The person's own browser (localStorage)                      | Until they clear their browser data                                                        |
+| The anonymous Supabase session (access and refresh token)      | The person's own browser (localStorage)                      | Until they clear their browser data. Anyone who copies it acts as that participant         |
 
 A daily job at 03:17 UTC (`pg_cron`, `private.purge_expired`) does the deleting. It records counts only, never content. There are no analytics, tracking cookies or third-party scripts.
 
@@ -47,13 +48,13 @@ A daily job at 03:17 UTC (`pg_cron`, `private.purge_expired`) does the deleting.
 
 ## Web protections
 
-Every page is served with: a Content Security Policy (`default-src 'self'`, scripts only from the app, network calls only to the app and its Supabase project, no framing), HSTS, `nosniff`, `Referrer-Policy: no-referrer` (board links never leak to other sites), a Permissions-Policy denying camera, microphone and location, and `Cross-Origin-Opener-Policy: same-origin`. Invite pages are sent with `X-Robots-Tag: noindex`; `robots.txt` deliberately allows crawling, because a crawler blocked from a page never sees its `noindex`. The headers are generated at build time by `security-headers.ts` (the build fails without them), the local preview server sends the same headers so every end-to-end test runs under the real policy, and the header test is re-run against the live site after each deployment.
+Every page is served with: a Content Security Policy (`default-src 'self'`, scripts only from the app, network calls only to the app and its Supabase project, no framing), HSTS, `nosniff`, `Referrer-Policy: no-referrer` (board links never leak to other sites), a Permissions-Policy denying camera, microphone and location, and `Cross-Origin-Opener-Policy: same-origin`. On `*.netlify.app` Netlify replaces our two-year HSTS header with its own one-year `preload` value; ours applies if a custom domain is added (decision D58). Invite pages are sent with `X-Robots-Tag: noindex`; `robots.txt` deliberately allows crawling, because a crawler blocked from a page never sees its `noindex`. The headers are generated at build time by `security-headers.ts` (the build fails without them), the local preview server sends the same headers so every end-to-end test runs under the real policy, and a GitHub Actions job (`live-check.yml`) re-runs the header test against the live site daily and after every push to `main`.
 
 ## If a link leaks
 
 1. **Lock the board** (Manage people, then Lock the board). Nobody new can join; people already in stay.
 2. **Remove anyone who should not be there** (Manage people, Remove).
-3. If the session is over, **end it**. The board becomes read-only and is deleted 7 days later.
+3. If the session is over, **end it**. Topics, actions and settings become read-only (downloads, locking and removal still work), and the board is deleted 7 days later.
 4. If it matters, start a new board and share the new link only with the people who need it.
 
 ## If the recovery link leaks
@@ -64,7 +65,7 @@ The recovery link only works for someone who has joined the board, and it keeps 
 
 The app uses only the Supabase **publishable key**, which is public by design (it is in every visitor's browser). The admin (`service_role` / secret) key is never used by the app, never stored in the repo or in Netlify, and CI fails if one appears in the build.
 
-- **Publishable key:** in the Supabase dashboard, open Project Settings, API Keys. Create a new publishable key, update `VITE_SUPABASE_PUBLISHABLE_KEY` in Netlify (Site configuration, Environment variables), trigger a deploy, then disable the old key.
+- **Publishable key:** in the Supabase dashboard, open Project Settings, API Keys, and create a new publishable key. Then, in this order: update `VITE_SUPABASE_PUBLISHABLE_KEY` in Netlify (Project configuration, Environment variables) and trigger a deploy; replace the key in `.github/workflows/keepalive.yml`, push, and run the keep-alive workflow by hand from the Actions tab; only then disable the old key. Gitleaks allows any `sb_publishable_` key, so no change is needed there.
 - **JWT signing keys:** in the Supabase dashboard, open Project Settings, JWT Keys, and rotate. Everyone is signed out and gets a new anonymous identity on their next visit, which means they must rejoin any board in progress (their old identity's membership no longer matches).
 
 ## Known limits and residual risks
@@ -81,8 +82,8 @@ The app uses only the Supabase **publishable key**, which is public by design (i
 ## Controls checked in CI on every push
 
 - ESLint bans `dangerouslySetInnerHTML` and `innerHTML`.
-- `npm audit --audit-level=high` (currently 0 vulnerabilities of any level) and a full-history gitleaks scan.
+- `npm audit --audit-level=high` on the app's dependencies and on the separate Lighthouse tool tree, and a full-history gitleaks scan.
 - A privileged-key check (`scripts/check-dist-keys.mjs`) that also decodes JWT-style keys, because their role is not visible as plain text. It runs in CI against a canary to prove it can fail, and on Netlify against the real production bundle.
-- 115 database assertions (pgTAP): access matrix, hidden values, facilitator authority, throttling, caps, retention, and structural checks (RLS on every table, `search_path` pinned on every privileged function, minimal grants).
+- 137 database assertions (pgTAP, one of them a helper-install check): access matrix, hidden values, facilitator authority, throttling, caps, retention, and structural checks (RLS on every table, `search_path` pinned on every privileged function, minimal grants).
 - End-to-end: exact CSP and header checks, script-like input in every field, no requests or websockets to other origins, no Referer to Supabase, direct API probing as an outsider, a removed member and a signed-out visitor, realtime isolation, and a 12-person load run.
-- GitHub Actions pinned to commit SHAs, checkouts do not keep credentials, and every tool CI installs is version-locked (Lighthouse has its own lockfile in `tools/lighthouse`); Dependabot for npm and Actions; gitleaks pre-commit hook.
+- GitHub Actions pinned to commit SHAs, checkouts do not keep credentials, and every npm tool and gitleaks is version-locked (Lighthouse has its own lockfile in `tools/lighthouse`; gitleaks is checksum-verified). LibreOffice and Playwright's system libraries come unpinned from the runner's signed Ubuntu packages. Dependabot for npm and Actions; gitleaks pre-commit hook.

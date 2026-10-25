@@ -132,6 +132,7 @@ jobs:
       - name: Lighthouse accessibility (every session screen, light and dark)
         run: |
           npm ci --prefix tools/lighthouse --ignore-scripts
+          npm audit --prefix tools/lighthouse --audit-level=high
           npm run build
           npx vite preview --host 127.0.0.1 --port 4173 --strictPort &
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:4173/ >/dev/null && break; sleep 1; done

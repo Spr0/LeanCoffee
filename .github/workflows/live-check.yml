@@ -1,0 +1,37 @@
+name: Live site check
+
+# Re-runs the security header test against production: daily, by hand, and a few minutes after
+# every push to main (Netlify publishes in about a minute). Header checks only; nothing is written
+# to the production database.
+on:
+  schedule:
+    - cron: '41 6 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  headers:
+    name: Live security headers
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      E2E_BASE_URL: https://leancoffee-app.netlify.app
+      VITE_SUPABASE_URL: https://dzvfedktsxomnzokeqap.supabase.co
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Wait for Netlify to publish
+        if: github.event_name == 'push'
+        run: sleep 180
+      - name: Security headers on the live site
+        run: npx playwright test e2e/security.spec.ts --grep "response headers"

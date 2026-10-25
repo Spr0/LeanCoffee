@@ -2,10 +2,10 @@
 [extend]
 useDefault = true
 
-# The Supabase publishable key is public by design (it ships in every visitor's browser) and is
-# needed by the keep-alive workflow. Only this exact value is allowed; any other key still fails.
-# If the key is rotated, update it here and in .github/workflows/keepalive.yml.
+# Supabase publishable keys are public by design (they ship in every visitor's browser) and the
+# keep-alive workflow needs one. Any sb_publishable_ key is allowed, so a rotation
+# does not break the full-history scan; secret keys (sb_secret_) and JWTs still fail.
 [[allowlists]]
-description = "Supabase publishable key (public by design)"
+description = "Supabase publishable keys (public by design)"
 regexTarget = "match"
-regexes = ['''sb_publishable_RC5OaN_H39LnHw9Gi7Wtog_45Cxq_4j''']
+regexes = ['''sb_publishable_[A-Za-z0-9_-]{20,}''']

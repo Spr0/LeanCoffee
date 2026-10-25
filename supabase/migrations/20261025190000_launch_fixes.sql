@@ -1,4 +1,4 @@
--- Launch audit fixes (decisions D60 to D62).
+-- Launch audit fixes (decisions D60 to D62, and D64 for the Brainstorm clock).
 -- 1. A "Move on" extend vote is applied by the server: the topic goes to Discussed (spec section 3,
 --    Discuss step 7), so the session keeps moving without the facilitator. The facilitator can
 --    still override with "Extend anyway", which reopens that topic with an extension.
