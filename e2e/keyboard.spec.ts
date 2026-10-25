@@ -52,14 +52,21 @@ test('a session can be run from start to end with the keyboard alone', async ({ 
   await tabTo(fran, btn(fran, /Start the .* clock/), 'Enter')
   await expect(pat.getByText('DISCUSSING NOW')).toBeVisible()
 
-  // The handover dialog takes focus, Escape closes it, and focus returns to the opener.
+  // The people dialog opens from the toolbar; the handover dialog opens inside it. Each takes
+  // focus, Escape closes the top one, and focus returns to its opener.
+  const people = btn(fran, '2 people')
+  await tabTo(fran, people, 'Enter')
+  await expect(fran.getByRole('dialog', { name: 'People' })).toBeVisible()
   const opener = btn(fran, 'Pass facilitator role')
   await tabTo(fran, opener, 'Enter')
   await expect(fran.getByRole('dialog', { name: 'Pass the facilitator role' })).toBeVisible()
   expect(await fran.evaluate(() => !!document.activeElement?.closest('dialog'))).toBe(true)
   await fran.keyboard.press('Escape')
-  await expect(fran.getByRole('dialog')).toHaveCount(0)
+  await expect(fran.getByRole('dialog', { name: 'Pass the facilitator role' })).toHaveCount(0)
   await expect(opener).toBeFocused()
+  await fran.keyboard.press('Escape')
+  await expect(fran.getByRole('dialog')).toHaveCount(0)
+  await expect(people).toBeFocused()
 
   await tabTo(fran, btn(fran, 'Call vote now'), 'Enter')
   await tabTo(pat, pat.getByRole('button', { name: /^Keep going/ }), 'Space')

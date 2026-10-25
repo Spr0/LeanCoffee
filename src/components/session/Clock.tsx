@@ -78,8 +78,9 @@ export function ClockPanel({
 }
 
 /**
- * Stage ring timer, built for Teams screen sharing: 64 px+ digits, 10 px stroke, turns orange
- * at 1:00 with a "1 min left" text label, and "Time's up" at zero. Never color alone.
+ * Stage ring timer, built for Teams screen sharing: 72 px digits, a 5/100 stroke, turns orange
+ * at 1:00 with a "1 min left" text label, and "Time's up" at zero. Never color alone. Ten minutes
+ * or more (five characters) drop to 64 px inside rings under 260 px, so they stay in the ring.
  */
 export function RingTimer({
   remaining,
@@ -98,6 +99,7 @@ export function RingTimer({
   const r = 50 - 6
   const circumference = 2 * Math.PI * r
   const fraction = Math.min(1, ms / totalMs)
+  const clock = formatClock(ms)
   const label = paused
     ? 'Paused'
     : done
@@ -128,9 +130,9 @@ export function RingTimer({
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span
-          className={`text-[72px] leading-none font-extrabold tabular-nums ${urgent ? 'text-urgent' : 'text-ink'}`}
+          className={`${clock.length > 4 && size < 260 ? 'text-[64px]' : 'text-[72px]'} leading-none font-extrabold tabular-nums ${urgent ? 'text-urgent' : 'text-ink'}`}
         >
-          {formatClock(ms)}
+          {clock}
         </span>
         <span
           className={`mt-2 text-[18px] font-extrabold ${urgent ? 'text-urgent' : 'text-muted'}`}

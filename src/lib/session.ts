@@ -76,3 +76,53 @@ export function formatDuration(ms: number): string {
   const total = Math.round(ms / 1000)
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
 }
+
+/** "1 vote", "3 votes". */
+export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+/** Discuss toolbar: "Topic 3 of 7" while a topic is on stage, "2 of 7 discussed" between topics. */
+export function discussProgress(topics: Topic[]): string {
+  const all = cards(topics)
+  const done = all.filter((t) => t.status === 'discussed').length
+  return all.some((t) => t.status === 'discussing')
+    ? `Topic ${done + 1} of ${all.length}`
+    : `${done} of ${all.length} discussed`
+}
+
+/** "extended once", "extended twice", "extended 3 times"; empty when never extended. */
+export function extendedText(times: number): string {
+  if (times <= 0) return ''
+  return `extended ${times === 1 ? 'once' : times === 2 ? 'twice' : `${times} times`}`
+}
+
+/** Topics longer than this take room from the stage ring. */
+export const LONG_TOPIC = 60
+
+/**
+ * Stage ring size in px. A long topic or the extend vote shrinks the ring, never the type: the
+ * topic stays at 44 px and the digits at 72 px for Teams screen sharing.
+ */
+export function stageRingSize(text: string, voting: boolean): number {
+  return voting || text.length > LONG_TOPIC ? 200 : 220
+}
+
+/**
+ * One polite announcement for what moved between two snapshots of the board: a topic starting,
+ * finishing, skipped or deferred. A Move on vote is left out; its result panel says it.
+ */
+export function boardMoves(before: Topic[], after: Topic[], rounds: ExtendRound[]): string {
+  const was = new Map(before.map((t) => [t.id, t.status]))
+  const said: string[] = []
+  for (const t of after) {
+    if (was.get(t.id) !== 'discussing' || t.status === 'discussing') continue
+    const round = lastRound(rounds, t.id)
+    const byVote = round?.result === 'move_on' && round.keep_count !== null
+    if (t.status === 'discussed' && !byVote)
+      said.push(`"${t.text}" moved to Discussed after ${formatDuration(t.time_spent_ms)}.`)
+    if (t.status === 'skipped') said.push(`"${t.text}" was skipped.`)
+    if (t.status === 'open') said.push(`"${t.text}" moved back to the queue for later.`)
+  }
+  const started = after.find((t) => t.status === 'discussing' && was.get(t.id) !== 'discussing')
+  if (started && was.has(started.id)) said.push(`Now discussing "${started.text}".`)
+  return said.join(' ')
+}

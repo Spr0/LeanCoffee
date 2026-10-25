@@ -8,19 +8,13 @@ import { Dialog } from './Dialog'
 
 const RECONNECTING_AFTER_MS = 90_000
 
-/** Sidebar footer: facilitator, handover, people management, sound. */
-export function PeoplePanel({ ctx }: { ctx: BoardContext }) {
-  const { board, state, userId, isFacilitator, act } = ctx
+/** Who is connected, and whether the facilitator's heartbeat has gone quiet. */
+function usePresence(ctx: BoardContext) {
+  const { board, state, isFacilitator } = ctx
   const now = useNow(5000)
-  const [dialog, setDialog] = useState<'pass' | 'people' | null>(null)
-  const [choice, setChoice] = useState<string | null>(null)
-  const [muted, setMutedState] = useState(isMuted)
   const people = board.data.participants
   const present = people.filter((p) => isPresent(p.last_seen_at, now, board.offsetMs))
   const facilitator = people.find((p) => p.user_id === state.facilitator_user_id)
-  const others = present.filter((p) => p.user_id !== userId)
-  const chosen = others.find((p) => p.user_id === choice)
-  const canReclaim = !isFacilitator && state.owner_user_id === userId
   // Spec section 8: everyone else sees when the facilitator's heartbeat has gone quiet. Browsers
   // slow timers in hidden tabs to about once a minute, so wait 90 s before saying so.
   const reconnecting =
@@ -28,11 +22,30 @@ export function PeoplePanel({ ctx }: { ctx: BoardContext }) {
     state.phase !== 'ended' &&
     facilitator !== undefined &&
     !isPresent(facilitator.last_seen_at, now, board.offsetMs, RECONNECTING_AFTER_MS)
+  const notice = reconnecting
+    ? `The facilitator, ${facilitator.display_name}, is reconnecting.`
+    : ''
+  return { now, people, present, facilitator, reconnecting, notice }
+}
+
+/**
+ * Facilitator, handover, people management, sound: the sidebar footer, or the body of the people
+ * dialog in Discuss, where the toolbar shows and announces "(reconnecting)" instead.
+ */
+export function PeoplePanel({ ctx, inDialog = false }: { ctx: BoardContext; inDialog?: boolean }) {
+  const { board, state, userId, isFacilitator, act } = ctx
+  const { now, people, present, facilitator, reconnecting, notice } = usePresence(ctx)
+  const [dialog, setDialog] = useState<'pass' | 'people' | null>(null)
+  const [choice, setChoice] = useState<string | null>(null)
+  const [muted, setMutedState] = useState(isMuted)
+  const others = present.filter((p) => p.user_id !== userId)
+  const chosen = others.find((p) => p.user_id === choice)
+  const canReclaim = !isFacilitator && state.owner_user_id === userId
   // Wrap-up has its own End session button; before that it lives here (spec F25).
   const canEnd = isFacilitator && state.phase !== 'wrapup' && state.phase !== 'ended'
 
   return (
-    <div className="border-t border-line pt-4">
+    <div className={inDialog ? '' : 'border-t border-line pt-4'}>
       <div className="flex items-center justify-between text-[15px]">
         <span className="text-muted">Facilitator</span>
         <span className="font-bold">
@@ -41,9 +54,11 @@ export function PeoplePanel({ ctx }: { ctx: BoardContext }) {
           {reconnecting && <span className="font-medium text-muted"> (reconnecting)</span>}
         </span>
       </div>
-      <p role="status" className="sr-only">
-        {reconnecting ? `The facilitator, ${facilitator.display_name}, is reconnecting.` : ''}
-      </p>
+      {!inDialog && (
+        <p role="status" className="sr-only">
+          {notice}
+        </p>
+      )}
       {isFacilitator && (
         <div className="mt-3 grid grid-cols-2 gap-2">
           <Button
@@ -116,7 +131,7 @@ export function PeoplePanel({ ctx }: { ctx: BoardContext }) {
         </fieldset>
         <p className="mt-4 text-[13px] text-muted">
           {state.owner_user_id === userId
-            ? 'You can take the role back from the sidebar at any time.'
+            ? 'You can take the role back at any time.'
             : 'The board creator can take the role back at any time.'}
         </p>
         <div className="mt-5 flex justify-end gap-3">
@@ -192,6 +207,54 @@ export function PeoplePanel({ ctx }: { ctx: BoardContext }) {
         </div>
       </Dialog>
     </div>
+  )
+}
+
+/**
+ * Discuss toolbar: faces of the people connected and an "N people" button that opens the people
+ * panel in a dialog. "(reconnecting)" shows here as well, since the dialog is usually closed.
+ */
+export function PeopleButton({ ctx }: { ctx: BoardContext }) {
+  const { present, facilitator, reconnecting, notice } = usePresence(ctx)
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      {reconnecting && (
+        <span className="text-[15px] text-muted">
+          Facilitator <b className="text-ink">{facilitator?.display_name}</b> (reconnecting)
+        </span>
+      )}
+      <p role="status" className="sr-only">
+        {notice}
+      </p>
+      <span className="hidden -space-x-1.5 sm:flex" aria-hidden="true">
+        {present.slice(0, 6).map((p) => (
+          <Avatar key={p.id} name={p.display_name} />
+        ))}
+      </span>
+      <Button variant="ghost" className="px-3" onClick={() => setOpen(true)}>
+        {present.length} {present.length === 1 ? 'person' : 'people'}
+      </Button>
+      <Dialog open={open} onClose={() => setOpen(false)} title="People">
+        <ul aria-label="People connected" className="mt-4 flex flex-wrap gap-2">
+          {present.map((p) => (
+            <li
+              key={p.id}
+              className="flex items-center gap-2 rounded-xl border border-line px-3 py-2 text-[15px] font-bold"
+            >
+              <Avatar name={p.display_name} />
+              {p.display_name}
+            </li>
+          ))}
+        </ul>
+        <div className="mt-5">
+          <PeoplePanel ctx={ctx} inDialog />
+        </div>
+        <div className="mt-5 flex justify-end">
+          <Button onClick={() => setOpen(false)}>Done</Button>
+        </div>
+      </Dialog>
+    </>
   )
 }
 

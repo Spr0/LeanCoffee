@@ -1,26 +1,32 @@
-import { useId, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent, type RefObject } from 'react'
 import { RingTimer } from '../../components/session/Clock'
+import { PeopleButton } from '../../components/session/People'
 import { Button } from '../../components/ui'
 import { chime } from '../../lib/chime'
 import {
+  boardMoves,
   cards,
+  discussProgress,
   dotTotals,
   extendOutcome,
-  formatDuration,
   lastRound,
+  LONG_TOPIC,
   openRound,
+  plural,
   sessionMinutesLeft,
+  stageRingSize,
   topicsThatFit,
 } from '../../lib/session'
 import { callWhenDue } from '../../lib/retry'
 import { formatClock, isPresent } from '../../lib/time'
-import type { ExtendVote } from '../../lib/types'
+import type { ExtendRound, ExtendVote, Topic } from '../../lib/types'
 import { useAtZero } from '../../state/useCountdown'
 import { useNow } from '../../state/useNow'
-import BoardTab from './BoardTab'
-import { Check, Eyebrow, Layout, TimerButtons, type PhaseProps } from './common'
+import { ActionItem, DiscussedColumn, QueueColumn } from './BoardColumns'
+import { Eyebrow, TimerButtons, type PhaseProps } from './common'
+import { DownloadsButton } from './Downloads'
 import { OwnerField, ownerName } from './OwnerField'
-import { BringBack, TOPIC_MAX } from './TopicTools'
+import { TopicEditor } from './TopicTools'
 
 const CHOICES: { value: ExtendVote['choice']; label: string }[] = [
   { value: 'keep', label: 'Keep going' },
@@ -28,14 +34,17 @@ const CHOICES: { value: ExtendVote['choice']; label: string }[] = [
   { value: 'move_on', label: 'Move on' },
 ]
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+// Chips on the stage. In dark mode --surface equals --panel, so they take --line to stand out.
+const CHIP = 'rounded-md bg-surface px-2.5 py-1 text-[14px] font-bold dark:bg-line'
 
+/**
+ * Discuss as the board: To discuss on the left, the stage in the middle, Discussed on the right,
+ * under a one-line toolbar with progress, people and downloads. Built for a 1280 x 720 Teams share.
+ */
 export default function Discuss({ ctx, remaining }: PhaseProps) {
   const { board, state, isFacilitator, act } = ctx
-  const { topics, extendRounds, actions, participants } = board.data
-  const [view, setView] = useState<'stage' | 'board'>('stage')
+  const { topics, extendRounds } = board.data
   const [note, setNote] = useState('')
-  const queueList = useRef<HTMLOListElement>(null)
   const now = useNow(1000)
   const nowServer = now + board.offsetMs
   const current = topics.find((t) => t.id === state.current_topic_id)
@@ -57,11 +66,6 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
           state.settings.discuss_s,
           state.settings.wrapup_s,
         )
-  // A topic brought back after an extension restarts at the full discussion time.
-  const totalMs = Math.max(
-    remaining ?? 0,
-    (current && current.extensions > 0 ? state.settings.extend_s : state.settings.discuss_s) * 1000,
-  )
   const roundLeft = round ? Math.max(0, Date.parse(round.closes_at) - nowServer) : null
   // Keep a closed vote's result on screen for 10 s, or while the clock sits at zero.
   const recentlyClosed = last?.closed_at ? nowServer - Date.parse(last.closed_at) < 10_000 : false
@@ -85,40 +89,80 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
     if (round) callWhenDue('resolve_extend_round', { p_round: round.id })
   })
 
-  const toggle = (
-    <div role="group" aria-label="View" className="flex rounded-xl border-2 border-line p-1">
-      {(['stage', 'board'] as const).map((v) => (
-        <button
-          key={v}
-          type="button"
-          aria-pressed={view === v}
-          onClick={() => setView(v)}
-          className={`min-h-11 rounded-lg px-5 text-[15px] font-bold ${view === v ? 'bg-teal text-on-teal' : ''}`}
-        >
-          {v === 'stage' ? 'Stage' : 'Board'}
-        </button>
-      ))}
-    </div>
-  )
+  // One polite line when a topic starts, finishes, is skipped or deferred; never per second.
+  const moveKey = topics.map((t) => `${t.id}:${t.status}`).join()
+  const [seen, setSeen] = useState({ key: moveKey, topics })
+  if (seen.key !== moveKey) {
+    setSeen({ key: moveKey, topics })
+    const message = boardMoves(seen.topics, topics, extendRounds)
+    if (message) setNote(message)
+  }
 
-  const main = (
-    <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {toggle}
-        {fit !== null && minutesLeft !== null && (
-          <p className="text-[15px] text-muted">
-            About{' '}
-            <b className="text-ink">
-              {fit} more {fit === 1 ? 'topic' : 'topics'}
-            </b>{' '}
-            fit in the {Math.round(minutesLeft)} minutes left
-          </p>
-        )}
+  // A pressed stage button often leaves with the stage's old content (Next topic, Skip, Start the
+  // clock, Call vote now). Focus then moves to the stage heading instead of the top of the page.
+  const stage = useRef<HTMLElement>(null)
+  const heading = useRef<HTMLHeadingElement>(null)
+  const focusInStage = useRef(false)
+  useEffect(() => {
+    const track = (e: FocusEvent) => {
+      focusInStage.current = !!stage.current?.contains(e.target as Node)
+    }
+    document.addEventListener('focusin', track)
+    return () => document.removeEventListener('focusin', track)
+  }, [])
+  const stageKey = `${current?.id}|${round?.id}|${shownRound?.id}`
+  useEffect(() => {
+    const active = document.activeElement
+    if (focusInStage.current && (active === null || active === document.body))
+      heading.current?.focus()
+  }, [stageKey])
+
+  const elapsed = minutesLeft === null ? 0 : state.planned_minutes - minutesLeft
+  return (
+    <main className="flex min-w-0 flex-1 flex-col gap-3 px-4 pt-3 pb-4 sm:px-6">
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
+          <p className="text-[15px] font-bold">{discussProgress(topics)}</p>
+          {minutesLeft !== null && (
+            <>
+              <div
+                className="h-2.5 w-[180px] overflow-hidden rounded-full bg-line"
+                aria-hidden="true"
+              >
+                <div
+                  className="h-full bg-teal"
+                  style={{ width: `${Math.min(100, (elapsed / state.planned_minutes) * 100)}%` }}
+                />
+              </div>
+              <p className="text-[15px] text-muted">
+                <b className="text-ink">
+                  {Math.round(elapsed)} of {state.planned_minutes} min
+                </b>
+                {fit !== null &&
+                  (fit === 0 ? (
+                    ' · no more topics fit'
+                  ) : (
+                    <>
+                      {' · about '}
+                      <b className="text-ink">
+                        {fit} more {fit === 1 ? 'topic' : 'topics'}
+                      </b>{' '}
+                      fit
+                    </>
+                  ))}
+              </p>
+            </>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <PeopleButton ctx={ctx} />
+          <DownloadsButton data={board.data} />
+        </div>
       </div>
       {minutesLeft !== null && minutesLeft <= 5 && (
         <div
           role="status"
-          className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border-2 border-urgent p-4"
+          className="flex flex-wrap items-center gap-3 rounded-xl border-2 border-urgent p-4"
         >
           <p className="flex-1 text-[16px] font-bold">
             About 5 minutes left in the session. Time to wrap up.
@@ -132,282 +176,262 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
           )}
         </div>
       )}
-      {view === 'board' ? (
-        <BoardTab ctx={ctx} totals={totals} />
-      ) : current ? (
-        <>
-          <section
-            aria-label="Now discussing"
-            className="mt-5 rounded-2xl border border-line-soft bg-panel p-6 xl:p-8"
-          >
-            <div className={shownRound ? '' : 'flex flex-wrap items-center justify-between gap-8'}>
-              <div className="min-w-0 grow basis-72">
-                <div className="flex gap-2">
-                  <span className="rounded-md bg-teal-soft px-2.5 py-1 text-[14px] font-extrabold tracking-[0.08em] text-teal">
-                    DISCUSSING NOW
-                  </span>
-                  <span className="rounded-md bg-surface px-2.5 py-1 text-[14px] font-bold">
-                    {plural(totals.get(current.id) ?? 0, 'vote')}
-                  </span>
-                  {current.extensions > 0 && (
-                    <span className="rounded-md bg-surface px-2.5 py-1 text-[14px] font-bold">
-                      Extended ×{current.extensions}
-                    </span>
-                  )}
-                </div>
-                <h1 className="mt-4 text-[48px] leading-[1.1] font-extrabold tracking-tight break-words">
-                  {current.text}
-                </h1>
-                <p className="mt-3 text-[18px] text-muted">
-                  Raised by <b className="text-ink">{current.author_name}</b>, who starts the
-                  conversation
-                </p>
-              </div>
-              {!shownRound && (
-                <RingTimer
-                  remaining={remaining}
-                  totalMs={totalMs}
-                  paused={state.paused_remaining_ms !== null}
-                />
-              )}
-            </div>
-            {/* During the extend vote the ring shrinks and sits beside the vote, so both fit a 720 px share. */}
-            {shownRound && (
-              <div className="mt-5 flex flex-wrap items-center gap-6">
-                <RingTimer
-                  remaining={remaining}
-                  totalMs={totalMs}
-                  paused={state.paused_remaining_ms !== null}
-                  size={200}
-                />
-                <div className="min-w-[320px] flex-1">
-                  <ExtendPanel ctx={ctx} roundId={shownRound.id} roundLeft={roundLeft} />
-                </div>
-              </div>
-            )}
-          </section>
-
-          {isFacilitator && (
-            <div className="mt-4 flex flex-wrap gap-2">
-              <TimerButtons ctx={ctx} />
-              {!round && (
-                <Button
-                  variant="secondary"
-                  onClick={() => act('open_extend_round', { p_board: state.board_id })}
-                >
-                  Call vote now
-                </Button>
-              )}
-              <Button
-                onClick={() =>
-                  act('next_topic', { p_board: state.board_id, p_outcome: 'discussed' })
-                }
-              >
-                Next topic
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() =>
-                  act('next_topic', { p_board: state.board_id, p_outcome: 'deferred' })
-                }
-              >
-                Defer to later
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => act('next_topic', { p_board: state.board_id, p_outcome: 'skipped' })}
-              >
-                Skip
-              </Button>
-            </div>
-          )}
-          <ActionsFor ctx={ctx} topicId={current.id} />
-        </>
-      ) : (
-        <section className="mt-5 rounded-2xl border border-line-soft bg-panel p-8">
-          {movedOn && lastDiscussed && (
-            <div className="mb-8 flex flex-wrap items-center gap-3 rounded-xl border-2 border-teal p-4">
-              <p className="flex-1 text-[17px]" role="status">
-                <b>The group chose to move on.</b> "{lastDiscussed.text}" is now discussed (
-                {movedOn.keep_count} keep going, {movedOn.neutral_count} neutral,{' '}
-                {movedOn.move_on_count} move on).
-              </p>
-              {isFacilitator && (
-                <Button
-                  variant="secondary"
-                  onClick={() => act('extend_topic', { p_board: state.board_id })}
-                >
-                  Extend {formatClock(state.settings.extend_s * 1000)} anyway
-                </Button>
-              )}
-            </div>
-          )}
-          {queue[0] ? (
-            <>
-              <p className="text-[14px] font-bold tracking-[0.1em] text-muted">UP NEXT</p>
-              <h1 className="mt-3 text-[44px] leading-tight font-extrabold">{queue[0].text}</h1>
-              <p className="mt-2 text-[18px] text-muted">Raised by {queue[0].author_name}</p>
-              {isFacilitator ? (
-                <div className="mt-6 flex flex-wrap gap-2">
-                  <Button
-                    className="h-14 px-8 text-[17px]"
-                    onClick={() => act('start_discussion', { p_board: state.board_id })}
-                  >
-                    Start the {formatClock(state.settings.discuss_s * 1000)} clock
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    onClick={() => act('revote', { p_board: state.board_id })}
-                  >
-                    Re-vote remaining topics
-                  </Button>
-                </div>
-              ) : (
-                <p className="mt-6 text-[17px] font-bold" aria-live="polite">
-                  Waiting for the facilitator to start the next topic.
-                </p>
-              )}
-            </>
+      {/* Reading and focus order runs left to right; on a phone the stage comes first. */}
+      <div className="grid flex-1 gap-4 lg:grid-cols-[minmax(250px,1fr)_minmax(0,2.25fr)_minmax(250px,1fr)]">
+        <QueueColumn ctx={ctx} totals={totals} onNote={setNote} />
+        <section
+          ref={stage}
+          aria-label="Discussing"
+          className="@container min-w-0 rounded-2xl border-2 border-teal bg-panel p-5 max-lg:order-first"
+        >
+          {current ? (
+            <Stage
+              key={current.id}
+              ctx={ctx}
+              topic={current}
+              votes={totals.get(current.id) ?? 0}
+              remaining={remaining}
+              round={round}
+              shownRound={shownRound}
+              roundLeft={roundLeft}
+              heading={heading}
+            />
           ) : (
             <>
-              <h1 className="text-[36px] font-extrabold">
-                {skipped.length > 0
-                  ? 'No topics left in the queue'
-                  : 'Every topic has been discussed'}
-              </h1>
-              {isFacilitator && (
-                <Button
-                  className="mt-6 h-14 px-8"
-                  onClick={() => act('start_phase', { p_board: state.board_id, p_phase: 'wrapup' })}
-                >
-                  Start wrap-up
-                </Button>
+              {movedOn && lastDiscussed && (
+                <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border-2 border-teal p-4">
+                  <p className="flex-1 text-[17px]" role="status">
+                    <b>The group chose to move on.</b> "{lastDiscussed.text}" is now discussed (
+                    {movedOn.keep_count} keep going, {movedOn.neutral_count} neutral,{' '}
+                    {movedOn.move_on_count} move on).
+                  </p>
+                  {isFacilitator && (
+                    <Button
+                      variant="secondary"
+                      onClick={() => act('extend_topic', { p_board: state.board_id })}
+                    >
+                      Extend {formatClock(state.settings.extend_s * 1000)} anyway
+                    </Button>
+                  )}
+                </div>
+              )}
+              <UpNext
+                ctx={ctx}
+                next={queue[0]}
+                votes={queue[0] ? (totals.get(queue[0].id) ?? 0) : 0}
+                skipped={skipped.length}
+                heading={heading}
+              />
+              {lastDiscussed && (
+                <ActionsFor
+                  ctx={ctx}
+                  topicId={lastDiscussed.id}
+                  label="Actions from the last topic"
+                  list={false}
+                />
               )}
             </>
           )}
-          {lastDiscussed && (
-            <ActionsFor ctx={ctx} topicId={lastDiscussed.id} label="Actions from the last topic" />
-          )}
         </section>
-      )}
-    </>
-  )
-
-  const elapsed = minutesLeft === null ? 0 : state.planned_minutes - minutesLeft
-  const side = (
-    <>
-      <div>
-        <Eyebrow right={`${Math.round(elapsed)} of ${state.planned_minutes} min`}>
-          Session clock
-        </Eyebrow>
-        <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-line" aria-hidden="true">
-          <div
-            className="h-full bg-teal"
-            style={{ width: `${Math.min(100, (elapsed / state.planned_minutes) * 100)}%` }}
-          />
-        </div>
-        <p className="mt-2 text-[13px] text-muted">A wrap-up reminder appears at 5 minutes left.</p>
+        <DiscussedColumn ctx={ctx} totals={totals} />
       </div>
-      <div>
-        <Eyebrow right={`${queue.length}`}>Up next</Eyebrow>
-        <ol ref={queueList} tabIndex={-1} aria-label="Up next" className="mt-2 flex flex-col gap-2">
-          {queue.map((t, i) => (
-            <li
-              key={t.id}
-              className="flex items-center gap-2 rounded-xl border border-line-soft bg-panel p-3"
-            >
-              <span className="flex-1 text-[15px] font-bold">{t.text}</span>
-              <span
-                className="rounded bg-teal-soft px-2 text-[14px] font-bold text-teal"
-                aria-label={`${totals.get(t.id) ?? 0} votes`}
-              >
-                {totals.get(t.id) ?? 0}
-              </span>
-              {isFacilitator && (
-                <>
-                  <button
-                    type="button"
-                    className="size-11 rounded-lg border-2 border-line font-bold disabled:opacity-30"
-                    disabled={i === 0}
-                    aria-label={`Move "${t.text}" up`}
-                    onClick={() => {
-                      const ids = queue.map((q) => q.id)
-                      const [prev, cur] = [ids[i - 1], ids[i]]
-                      if (prev && cur) ids.splice(i - 1, 2, cur, prev)
-                      void act('reorder_topics', { p_board: state.board_id, p_ids: ids })
-                    }}
-                  >
-                    ↑
-                  </button>
-                </>
-              )}
-            </li>
-          ))}
-        </ol>
-        {!state.topics_locked && <ParkingLot ctx={ctx} />}
-      </div>
-      {skipped.length > 0 && (
-        <div>
-          <Eyebrow right={`${skipped.length}`}>Skipped</Eyebrow>
-          <ul className="mt-2 flex flex-col gap-2">
-            {skipped.map((t) => (
-              <li
-                key={t.id}
-                className="flex items-center gap-2 rounded-xl border-2 border-dashed border-line bg-panel p-3"
-              >
-                <span className="flex-1 text-[15px] break-words">{t.text}</span>
-                {isFacilitator && (
-                  <BringBack
-                    ctx={ctx}
-                    topic={t}
-                    onBack={(message) => {
-                      // The button disappears, so focus moves to the queue it returned to.
-                      setNote(message)
-                      queueList.current?.focus()
-                    }}
-                  />
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
       <p role="status" className="sr-only">
         {note}
       </p>
-      {discussed.length > 0 && (
-        <div>
-          <Eyebrow>Discussed</Eyebrow>
-          <ul className="mt-2 flex flex-col gap-2">
-            {discussed.map((t) => (
-              <li
-                key={t.id}
-                className="flex items-center gap-3 rounded-xl border border-line-soft bg-panel p-3 text-[14px]"
-              >
-                <Check />
-                <span className="flex-1">{t.text}</span>
-                <span className="text-muted">
-                  {formatDuration(t.time_spent_ms)} ·{' '}
-                  {actions.filter((a) => a.topic_id === t.id).length} actions
-                </span>
-              </li>
-            ))}
-          </ul>
+    </main>
+  )
+}
+
+/** The topic on stage: badges, the topic as the page heading, the ring, controls and actions. */
+function Stage({
+  ctx,
+  topic,
+  votes,
+  remaining,
+  round,
+  shownRound,
+  roundLeft,
+  heading,
+}: {
+  ctx: PhaseProps['ctx']
+  topic: Topic
+  votes: number
+  remaining: number | null
+  round: ExtendRound | undefined
+  shownRound: ExtendRound | undefined
+  roundLeft: number | null
+  heading: RefObject<HTMLHeadingElement | null>
+}) {
+  const { state, isFacilitator, act } = ctx
+  const [editing, setEditing] = useState(false)
+  const editId = useId()
+  // Save, Cancel and Escape put focus back on the Edit button.
+  const refocus = useRef(false)
+  useEffect(() => {
+    if (!editing && refocus.current) {
+      refocus.current = false
+      document.getElementById(editId)?.focus()
+    }
+  }, [editing, editId])
+  // A topic brought back after an extension restarts at the full discussion time.
+  const totalMs = Math.max(
+    remaining ?? 0,
+    (topic.extensions > 0 ? state.settings.extend_s : state.settings.discuss_s) * 1000,
+  )
+  const outcome = (p_outcome: 'discussed' | 'deferred' | 'skipped') =>
+    act('next_topic', { p_board: state.board_id, p_outcome })
+  return (
+    <>
+      <div className="flex flex-wrap gap-2">
+        <span className="rounded-md bg-teal-soft px-2.5 py-1 text-[14px] font-extrabold tracking-[0.08em] text-teal">
+          DISCUSSING NOW
+        </span>
+        <span className={CHIP}>{plural(votes, 'vote')}</span>
+        {topic.extensions > 0 && <span className={CHIP}>Extended ×{topic.extensions}</span>}
+      </div>
+      {/* A long topic or the extend vote shrinks the ring; the type stays at 44 px. Beside a long
+          topic the ring stays at the top, so the time is on screen however far the topic runs. */}
+      <div
+        className={`mt-3 flex flex-wrap justify-between gap-x-6 gap-y-4 ${topic.text.length > LONG_TOPIC ? 'items-start' : 'items-center'}`}
+      >
+        <div className="min-w-0 grow basis-64">
+          <h1
+            ref={heading}
+            tabIndex={-1}
+            className="text-[44px] leading-[1.08] font-extrabold tracking-tight break-words"
+          >
+            {topic.text}
+          </h1>
+          {editing && (
+            <div className="mt-3">
+              <TopicEditor
+                ctx={ctx}
+                topic={topic}
+                onDone={() => {
+                  refocus.current = true
+                  setEditing(false)
+                }}
+              />
+            </div>
+          )}
+          <p className="mt-2 text-[17px] text-muted">
+            Raised by <b className="text-ink">{topic.author_name}</b>, who starts the conversation
+          </p>
+        </div>
+        {/* Centered when it wraps under the topic, as on a phone. */}
+        <div className="mx-auto">
+          <RingTimer
+            remaining={remaining}
+            totalMs={totalMs}
+            paused={state.paused_remaining_ms !== null}
+            size={stageRingSize(topic.text, shownRound !== undefined)}
+          />
+        </div>
+      </div>
+      {shownRound && (
+        <div className="mt-4">
+          <ExtendPanel ctx={ctx} roundId={shownRound.id} roundLeft={roundLeft} />
         </div>
       )}
-      {isFacilitator && !current && queue.length > 0 && (
-        <Button
-          variant="ghost"
-          onClick={() => act('start_phase', { p_board: state.board_id, p_phase: 'wrapup' })}
-        >
-          Start wrap-up
-        </Button>
+      {isFacilitator && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          <TimerButtons ctx={ctx} />
+          {!round && (
+            <Button
+              variant="secondary"
+              onClick={() => act('open_extend_round', { p_board: state.board_id })}
+            >
+              Call vote now
+            </Button>
+          )}
+          <Button onClick={() => outcome('discussed')}>Next topic</Button>
+          <Button variant="ghost" onClick={() => outcome('deferred')}>
+            Defer to later
+          </Button>
+          <Button variant="ghost" onClick={() => outcome('skipped')}>
+            Skip
+          </Button>
+          {!editing && (
+            <Button
+              id={editId}
+              variant="ghost"
+              aria-label={`Edit "${topic.text}"`}
+              onClick={() => setEditing(true)}
+            >
+              Edit
+            </Button>
+          )}
+        </div>
       )}
-      <p className="sr-only">{participants.length} people on this board</p>
+      <ActionsFor ctx={ctx} topicId={topic.id} />
     </>
   )
+}
 
-  return <Layout ctx={ctx} main={main} side={side} />
+/** Between topics: the next topic and the facilitator's start, or the end of the queue. */
+function UpNext({
+  ctx,
+  next,
+  votes,
+  skipped,
+  heading,
+}: {
+  ctx: PhaseProps['ctx']
+  next: Topic | undefined
+  votes: number
+  skipped: number
+  heading: RefObject<HTMLHeadingElement | null>
+}) {
+  const { state, isFacilitator, act } = ctx
+  const wrapUp = () => act('start_phase', { p_board: state.board_id, p_phase: 'wrapup' })
+  if (!next)
+    return (
+      <>
+        <h1 ref={heading} tabIndex={-1} className="text-[36px] leading-tight font-extrabold">
+          {skipped > 0 ? 'No topics left in the queue' : 'Every topic has been discussed'}
+        </h1>
+        {isFacilitator && (
+          <Button className="mt-6 h-14 px-8" onClick={wrapUp}>
+            Start wrap-up
+          </Button>
+        )}
+      </>
+    )
+  return (
+    <>
+      <span className={`${CHIP} font-extrabold tracking-[0.08em]`}>UP NEXT</span>
+      <h1
+        ref={heading}
+        tabIndex={-1}
+        className="mt-3 text-[44px] leading-[1.08] font-extrabold tracking-tight break-words"
+      >
+        {next.text}
+      </h1>
+      <p className="mt-2 text-[17px] text-muted">
+        Raised by <b className="text-ink">{next.author_name}</b> · {plural(votes, 'vote')}
+      </p>
+      {isFacilitator ? (
+        <div className="mt-6 flex flex-wrap gap-2">
+          <Button
+            className="h-14 px-8 text-[17px]"
+            onClick={() => act('start_discussion', { p_board: state.board_id })}
+          >
+            Start the {formatClock(state.settings.discuss_s * 1000)} clock
+          </Button>
+          <Button variant="ghost" onClick={() => act('revote', { p_board: state.board_id })}>
+            Re-vote remaining topics
+          </Button>
+          <Button variant="ghost" onClick={wrapUp}>
+            Start wrap-up
+          </Button>
+        </div>
+      ) : (
+        <p className="mt-6 text-[17px] font-bold" aria-live="polite">
+          Waiting for the facilitator to start the next topic.
+        </p>
+      )}
+    </>
+  )
 }
 
 function ExtendPanel({
@@ -447,7 +471,8 @@ function ExtendPanel({
           {!closed && ` · closes in ${formatClock(roundLeft ?? 0)}`}
         </p>
       </div>
-      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+      {/* Side by side when the stage column is wide enough, stacked when it is not. */}
+      <div className="mt-4 grid gap-2 @lg:grid-cols-3">
         {CHOICES.map((c) => (
           <button
             key={c.value}
@@ -455,12 +480,12 @@ function ExtendPanel({
             disabled={closed}
             aria-pressed={mine?.choice === c.value}
             onClick={() => act('cast_extend_vote', { p_round: roundId, p_choice: c.value })}
-            className={`flex min-h-14 items-center justify-between rounded-xl border-2 px-4 text-[17px] font-bold disabled:cursor-default ${mine?.choice === c.value ? 'border-teal bg-teal-soft' : 'border-line'}`}
+            className={`flex min-h-14 items-center justify-between gap-2 rounded-xl border-2 px-4 text-[17px] font-bold disabled:cursor-default ${mine?.choice === c.value ? 'border-teal bg-teal-soft' : 'border-line'}`}
           >
             <span>
               {c.label}
               {mine?.choice === c.value && (
-                <span className="ml-2 text-[14px] text-teal">✓ Your vote</span>
+                <span className="block text-[14px] text-teal">✓ Your vote</span>
               )}
             </span>
             {/* Tallies stay hidden until the round closes; nothing about them is in the page before then. */}
@@ -486,19 +511,25 @@ function ExtendPanel({
   )
 }
 
+/**
+ * Add an action to a topic. On stage the topic's actions are listed underneath; between topics
+ * only the form shows, as the last topic's actions are listed under it in Discussed.
+ */
 function ActionsFor({
   ctx,
   topicId,
   label = 'Actions from this topic',
+  list = true,
 }: {
   ctx: PhaseProps['ctx']
   topicId: string
   label?: string
+  list?: boolean
 }) {
   const { board, state, act } = ctx
   const [text, setText] = useState('')
   const [owner, setOwner] = useState('')
-  const list = board.data.actions.filter((a) => a.topic_id === topicId)
+  const actions = board.data.actions.filter((a) => a.topic_id === topicId)
   async function add(e: FormEvent) {
     e.preventDefault()
     if (!text.trim()) return
@@ -515,7 +546,7 @@ function ActionsFor({
     }
   }
   return (
-    <div className="mt-6">
+    <div className="mt-5">
       <Eyebrow>{label}</Eyebrow>
       <form onSubmit={add} className="mt-2 flex flex-wrap gap-2">
         <input
@@ -523,7 +554,7 @@ function ActionsFor({
           value={text}
           maxLength={140}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Add an action, such as: Ana to share her prompt library"
+          placeholder="Add an action"
           className="h-12 min-w-0 grow basis-60 rounded-xl border-2 border-line bg-panel px-3 text-[16px]"
         />
         <OwnerField
@@ -536,55 +567,15 @@ function ActionsFor({
           Add action
         </Button>
       </form>
-      <ul className="mt-2 flex flex-col gap-2">
-        {list.map((a) => (
-          <li key={a.id} className="flex items-center gap-3 rounded-xl bg-surface p-3">
-            <input
-              type="checkbox"
-              className="size-5 accent-[var(--teal)]"
-              checked={a.done}
-              aria-label={`Done: ${a.text}`}
-              onChange={(e) => act('toggle_action', { p_action: a.id, p_done: e.target.checked })}
-            />
-            <span className={`flex-1 text-[16px] ${a.done ? 'line-through' : ''}`}>{a.text}</span>
-            {a.owner_name && <span className="text-[14px] font-bold">{a.owner_name}</span>}
-          </li>
-        ))}
-      </ul>
+      {list && actions.length > 0 && (
+        <ul className="mt-2 flex flex-col gap-2">
+          {actions.map((a) => (
+            <li key={a.id}>
+              <ActionItem ctx={ctx} action={a} />
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
-  )
-}
-
-function ParkingLot({ ctx }: { ctx: PhaseProps['ctx'] }) {
-  const { state, act } = ctx
-  const [text, setText] = useState('')
-  const countId = useId()
-  return (
-    <form
-      className="mt-2"
-      onSubmit={async (e) => {
-        e.preventDefault()
-        if (text.trim() && (await act('add_topic', { p_board: state.board_id, p_text: text })))
-          setText('')
-      }}
-    >
-      <div className="flex gap-2">
-        <input
-          aria-label="Add a topic to the end of the queue"
-          aria-describedby={countId}
-          value={text}
-          maxLength={TOPIC_MAX}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Add a topic"
-          className="h-11 min-w-0 flex-1 rounded-lg border-2 border-line bg-panel px-3 text-[15px]"
-        />
-        <Button type="submit" variant="secondary">
-          Add
-        </Button>
-      </div>
-      <p id={countId} className="mt-1 text-[13px] text-muted">
-        {text.length} of {TOPIC_MAX} characters
-      </p>
-    </form>
   )
 }

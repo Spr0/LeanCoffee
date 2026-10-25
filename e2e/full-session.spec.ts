@@ -172,7 +172,8 @@ test('six people run a whole session', async ({ browser }) => {
   await pat.getByRole('button', { name: 'Add action' }).click()
   await expect(fran.getByText('Draft a two-week onboarding checklist')).toBeVisible()
 
-  // Handover mid-session, then the creator takes the role back.
+  // Handover mid-session from the people dialog, then the creator takes the role back.
+  await fran.getByRole('button', { name: /^\d+ people$/ }).click()
   await fran.getByRole('button', { name: 'Pass facilitator role' }).click()
   await fran.getByRole('radio', { name: 'Quinn' }).check()
   await fran.getByRole('button', { name: 'Pass to Quinn' }).click()
@@ -187,12 +188,12 @@ test('six people run a whole session', async ({ browser }) => {
   ).toBeVisible()
   await fran.getByRole('button', { name: 'Take the facilitator role back' }).click()
   await expect(fran.getByText('FACILITATOR', { exact: true })).toBeVisible()
-  await fran.getByRole('button', { name: 'Stage' }).click()
-  await fran.getByRole('button', { name: 'Board', exact: true }).click()
-  await expect(fran.getByRole('region', { name: 'Discussed' })).toContainText(
-    'Onboarding remote hires',
-  )
-  await fran.getByRole('button', { name: 'Stage' }).click()
+  await fran.getByRole('dialog', { name: 'People' }).getByRole('button', { name: 'Done' }).click()
+  // The board shows the first topic discussed, with its action underneath.
+  const discussed = fran.getByRole('region', { name: 'Discussed' })
+  await expect(discussed).toContainText('Onboarding remote hires')
+  await expect(discussed).toContainText('extended twice')
+  await expect(discussed).toContainText('Draft a two-week onboarding checklist · Pat')
   await fran.getByRole('button', { name: 'Next topic', exact: true }).click()
   await fran.getByRole('button', { name: 'Start wrap-up' }).first().click()
 

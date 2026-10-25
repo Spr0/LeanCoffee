@@ -1,6 +1,6 @@
 # Lean Coffee
 
-A free, realtime Lean Coffee meeting app for small teams (3 to 12 people) on a Teams call. The facilitator shares the Stage view; everyone else joins in a browser tab with a private link and a display name. No accounts. Results download as Word and Excel files.
+A free, realtime Lean Coffee meeting app for small teams (3 to 12 people) on a Teams call. The facilitator shares the board; everyone else joins in a browser tab with a private link and a display name. No accounts. Results download as Word and Excel files.
 
 - Live site: https://leancoffee-app.netlify.app
 - Build brief: [`docs/handoff/`](docs/handoff/) (build prompt, functional spec, mockups, addendum)

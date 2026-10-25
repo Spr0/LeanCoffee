@@ -26,9 +26,10 @@ const ORDER: Phase[] = ['brainstorm', 'clarify', 'vote', 'discuss', 'wrapup', 'e
 export function PhaseStepper({ state, currentHint }: { state: BoardState; currentHint?: string }) {
   const current = ORDER.indexOf(state.phase)
   return (
+    // Relative, so the hidden "(done)" labels scroll with the steps instead of widening a phone page.
     <nav
       aria-label="Session progress"
-      className="shrink-0 overflow-x-auto border-b border-line-soft bg-surface"
+      className="relative shrink-0 overflow-x-auto border-b border-line-soft bg-surface"
     >
       <ol className="flex h-[88px] min-w-max items-center gap-3 px-4 sm:px-10">
         {STEPS.map((step, i) => {

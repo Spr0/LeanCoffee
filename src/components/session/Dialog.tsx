@@ -23,7 +23,11 @@ export function Dialog({
   return (
     <dialog
       ref={ref}
-      onClose={onClose}
+      // React bubbles "close" through the tree, so a dialog opened inside this one (the people
+      // dialog's handover and end-session dialogs) would close it too. Only its own close counts.
+      onClose={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
       aria-labelledby={titleId}
       className="m-auto w-[min(560px,calc(100vw-32px))] rounded-2xl bg-panel p-8 text-ink backdrop:bg-black/50"
     >

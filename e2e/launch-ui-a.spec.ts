@@ -2,9 +2,9 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 import { guard } from './guard.ts'
 
-// Launch fixes on the Vote, Discuss and Board screens: downloads from the Vote reveal on, an early
-// vote where everyone moves on and the facilitator extends anyway, a free-text action owner,
-// skip and Bring back (spec F20), and the facilitator editing and deleting topics (F07).
+// Launch fixes on the Vote and Discuss screens: downloads from the Vote reveal on, an early vote
+// where everyone moves on and the facilitator extends anyway, a free-text action owner, skip and
+// Bring back (spec F20), and the facilitator editing and deleting topics (F07) on the board.
 
 /** axe in the current theme and the other one, ending where it started. */
 async function axe(page: Page) {
@@ -18,7 +18,7 @@ async function axe(page: Page) {
 }
 
 const region = (page: Page, name: string) => page.getByRole('region', { name, exact: true })
-const stage = (page: Page) => region(page, 'Now discussing')
+const stage = (page: Page) => region(page, 'Discussing')
 
 test('skip and bring back, edit and delete, downloads, owners and the move-on override', async ({
   browser,
@@ -72,7 +72,7 @@ test('skip and bring back, edit and delete, downloads, owners and the move-on ov
   for (const page of [fran, pat]) await page.getByRole('button', { name: /^Move on/ }).click()
   await expect(pat.getByText('The group chose to move on.')).toBeVisible()
   await expect(pat.getByText('DISCUSSING NOW')).toHaveCount(0)
-  await expect(pat.getByText('UP NEXT', { exact: true })).toBeVisible()
+  await expect(stage(pat).getByText('UP NEXT', { exact: true })).toBeVisible()
   await expect(pat.getByRole('button', { name: /anyway/ })).toHaveCount(0)
   await axe(pat)
   await fran.getByRole('button', { name: 'Extend 3:00 anyway' }).click()
@@ -87,22 +87,20 @@ test('skip and bring back, edit and delete, downloads, owners and the move-on ov
   await expect(fran.getByText('Someone in finance', { exact: true })).toBeVisible()
   await expect(pat.getByLabel('Action owner')).toHaveValue('')
 
-  // Skip: the topic stays visible to everyone under Skipped.
+  // Skip: the topic stays visible to everyone under Skipped, in the To discuss column.
   await fran.getByRole('button', { name: 'Skip', exact: true }).click()
-  const patSide = pat.getByRole('complementary', { name: 'Session controls' })
-  await expect(patSide.getByText('Skipped', { exact: true })).toBeVisible()
-  await expect(patSide.getByText('Alpha topic', { exact: true })).toBeVisible()
+  const skipped = (page: Page) => region(page, 'To discuss').getByRole('list', { name: /^Skipped/ })
+  await expect(skipped(pat)).toContainText('Alpha topic')
   await expect(pat.getByRole('button', { name: /^Bring back/ })).toHaveCount(0)
   await fran.getByRole('button', { name: /Start the .* clock/ }).click()
   await expect(stage(pat)).toContainText('Bravo topic')
 
-  // Board tab: downloads and Skipped for everyone; edit and delete for the facilitator only.
-  for (const page of [fran, pat])
-    await page.getByRole('button', { name: 'Board', exact: true }).click()
-  await expect(region(pat, 'Skipped')).toContainText('Alpha topic')
+  // The board: downloads and Skipped for everyone; edit and delete for the facilitator only.
+  await pat.getByRole('button', { name: 'Downloads', exact: true }).click()
   await expect(pat.getByRole('button', { name: 'Download Word file' })).toBeEnabled()
+  await pat.keyboard.press('Escape')
   await expect(pat.getByRole('button', { name: /^(Edit|Delete|Bring back) "/ })).toHaveCount(0)
-  const onStage = region(fran, 'Discussing')
+  const onStage = stage(fran)
   await expect(onStage.getByRole('button', { name: 'Edit "Bravo topic"' })).toBeVisible()
   await expect(onStage.getByRole('button', { name: /^Delete/ })).toHaveCount(0)
   await axe(fran)
@@ -127,7 +125,7 @@ test('skip and bring back, edit and delete, downloads, owners and the move-on ov
   await onStage.getByRole('button', { name: 'Edit "Bravo topic"' }).click()
   await edit.fill('Bravo, renamed on stage')
   await fran.getByRole('button', { name: 'Save', exact: true }).click()
-  await expect(region(pat, 'Discussing')).toContainText('Bravo, renamed on stage')
+  await expect(stage(pat)).toContainText('Bravo, renamed on stage')
 
   await queue.getByRole('button', { name: 'Delete "Delta topic"' }).click()
   const dialog = fran.getByRole('dialog', { name: 'Delete this topic?' })
@@ -137,10 +135,9 @@ test('skip and bring back, edit and delete, downloads, owners and the move-on ov
   await expect(pat.getByText('Delta topic', { exact: true })).toHaveCount(0)
 
   // Bring back puts the skipped topic at the bottom of the queue.
-  await region(fran, 'Skipped').getByRole('button', { name: 'Bring back "Alpha topic"' }).click()
-  await expect(region(pat, 'Skipped')).toHaveCount(0)
+  await skipped(fran).getByRole('button', { name: 'Bring back "Alpha topic"' }).click()
+  await expect(skipped(pat)).toHaveCount(0)
   await expect(region(pat, 'To discuss').getByRole('listitem').last()).toContainText('Alpha topic')
-  await expect(patSide.getByText('Skipped', { exact: true })).toHaveCount(0)
 
   for (const g of guards) g.check()
 })

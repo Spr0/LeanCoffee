@@ -59,7 +59,7 @@ Every page is served with: a Content Security Policy (`default-src 'self'`, scri
 
 ## If the recovery link leaks
 
-The recovery link only works for someone who has joined the board, and it keeps working (it is not changed when used). If it leaks to someone already in the board, they can take the facilitator role. The board creator can take it back from the sidebar at any time without the link; then **remove that person** (which blocks their identity) and **lock the board** (which stops them rejoining under a new identity).
+The recovery link only works for someone who has joined the board, and it keeps working (it is not changed when used). If it leaks to someone already in the board, they can take the facilitator role. The board creator can take it back from the people panel (the sidebar, or the "N people" button in Discuss) at any time without the link; then **remove that person** (which blocks their identity) and **lock the board** (which stops them rejoining under a new identity).
 
 ## Rotating keys
 
