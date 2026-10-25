@@ -46,14 +46,14 @@ test('six people run a whole session', async ({ browser }) => {
 
   // Lobby
   await fran.goto('/')
-  await fran.getByLabel('Your name').fill('Fran')
-  await fran.getByLabel('Board name').fill(`E2E full session ${Date.now()}`)
+  await fran.getByLabel('Name', { exact: true }).fill('Fran')
+  await fran.getByLabel('Name this session').fill(`E2E full session ${Date.now()}`)
   await fran.getByRole('button', { name: 'Create board' }).click()
   await expect(fran.getByTestId('room-code')).toBeVisible()
   const link = fran.url()
   for (const [i, page] of others.entries()) {
     await page.goto(link)
-    await page.getByLabel('Your name').fill(NAMES[i + 1] ?? '')
+    await page.getByLabel('Name', { exact: true }).fill(NAMES[i + 1] ?? '')
     await page.getByRole('button', { name: 'Join session' }).click()
     await expect(page.getByText(/Waiting for Fran/)).toBeVisible()
   }

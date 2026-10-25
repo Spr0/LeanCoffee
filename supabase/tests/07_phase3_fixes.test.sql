@@ -13,6 +13,7 @@ select public.join_board(current_setting('t.code'), 'Pat');
 select tests.login(tests.u(1));
 select public.start_phase(current_setting('t.board')::uuid, 'brainstorm');
 select public.add_topic(current_setting('t.board')::uuid, 'Topic A');
+select public.add_topic(current_setting('t.board')::uuid, 'Topic B');
 select tests.login(tests.u(2));
 select throws_ok(format('select public.close_brainstorm(%L)', current_setting('t.board')), 'P0001', 'not_allowed',
   'participants cannot close Brainstorm before the clock ends');
@@ -43,12 +44,14 @@ select set_config('t.r1', public.open_extend_round(current_setting('t.board')::u
 select isnt(current_setting('t.r1'), '', 'a member opens the vote once the clock has ended');
 select tests.login(tests.u(1));
 select public.resolve_extend_round(current_setting('t.r1')::uuid);
+-- No votes means move on, which takes the topic off stage (launch fix D60), so nobody can reopen it.
 select tests.login(tests.u(2));
-select throws_ok(format('select public.open_extend_round(%L)', current_setting('t.board')), 'P0001', 'not_allowed',
+select throws_ok(format('select public.open_extend_round(%L)', current_setting('t.board')), 'P0001', 'wrong_phase',
   'a late joiner cannot reopen the vote after the group decided');
 select tests.login(tests.u(1));
+select public.start_discussion(current_setting('t.board')::uuid);
 select lives_ok(format('select public.open_extend_round(%L)', current_setting('t.board')),
-  'the facilitator can still call another vote');
+  'the facilitator can call a vote early on the next topic');
 select tests.signed_out();
 select throws_ok(format('select public.close_brainstorm(%L)', current_setting('t.board')), '42501', null,
   'signed-out visitors cannot call close_brainstorm');

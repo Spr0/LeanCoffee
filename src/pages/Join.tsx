@@ -71,7 +71,7 @@ export default function Join({
         ) : (
           <form onSubmit={submit} className="mt-7">
             <label className="block text-[16px] font-bold">
-              Your name
+              Name
               <input
                 className={inputClass}
                 value={name}

@@ -102,9 +102,10 @@ select set_config('t.r3', public.open_extend_round(current_setting('t.board')::u
 select is(public.resolve_extend_round(current_setting('t.r3')::uuid), 'move_on',
   'no votes means move on (facilitator closes early)');
 
--- Timer pause and resume.
+-- Timer pause and resume (the Move on above took that topic off stage, so start the next one).
+select public.start_discussion(current_setting('t.board')::uuid);
 select public.timer_pause(current_setting('t.board')::uuid);
-select ok((select phase_ends_at is null and paused_remaining_ms between 179000 and 180000 from public.board_state),
+select ok((select phase_ends_at is null and paused_remaining_ms between 299000 and 300000 from public.board_state),
   'pause stores the remaining time');
 select public.timer_resume(current_setting('t.board')::uuid);
 select ok((select phase_ends_at is not null and paused_remaining_ms is null from public.board_state),
@@ -112,7 +113,7 @@ select ok((select phase_ends_at is not null and paused_remaining_ms is null from
 
 -- Next topic books the discussion.
 select public.next_topic(current_setting('t.board')::uuid);
-select is((select count(*) from public.topics where status = 'discussed' and discussed_seq = 1), 1::bigint,
+select is((select count(*) from public.topics where status = 'discussed' and discussed_seq = 2), 1::bigint,
   'next topic marks the current topic discussed in order');
 
 -- Settings updates keep the board name unless a new one is given.

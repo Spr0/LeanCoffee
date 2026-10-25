@@ -28,13 +28,13 @@ test('a session can be run from start to end with the keyboard alone', async ({ 
     page.getByRole('button', { name, exact: typeof name === 'string' })
 
   await fran.goto('/')
-  await typeInto(fran, fran.getByLabel('Your name'), 'Fran')
-  await typeInto(fran, fran.getByLabel('Board name'), `E2E keyboard ${Date.now()}`)
+  await typeInto(fran, fran.getByLabel('Name', { exact: true }), 'Fran')
+  await typeInto(fran, fran.getByLabel('Name this session'), `E2E keyboard ${Date.now()}`)
   await tabTo(fran, btn(fran, 'Create board'), 'Enter')
   await expect(fran.getByTestId('room-code')).toBeVisible()
 
   await pat.goto(fran.url())
-  await typeInto(pat, pat.getByLabel('Your name'), 'Pat', true)
+  await typeInto(pat, pat.getByLabel('Name', { exact: true }), 'Pat', true)
   await expect(pat.getByText(/Waiting for Fran/)).toBeVisible()
 
   await tabTo(fran, btn(fran, 'Start brainstorm for 2 people'), 'Enter')
@@ -64,8 +64,8 @@ test('a session can be run from start to end with the keyboard alone', async ({ 
   await tabTo(fran, btn(fran, 'Call vote now'), 'Enter')
   await tabTo(pat, pat.getByRole('button', { name: /^Keep going/ }), 'Space')
   await tabTo(fran, fran.getByRole('button', { name: /^Move on/ }), 'Enter')
+  // A Move on vote takes the topic off stage by itself (decision D60).
   await expect(pat.getByText('The group chose to move on.')).toBeVisible()
-  await tabTo(fran, btn(fran, 'Next topic').first(), 'Enter')
   await tabTo(fran, btn(fran, 'Start wrap-up').first(), 'Enter')
 
   await typeInto(pat, pat.getByLabel('Your take-away'), 'Keyboards are enough.', true)

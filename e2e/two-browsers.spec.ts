@@ -7,8 +7,8 @@ test('facilitator and participant see each other and live changes', async ({ bro
   const participant = await (await browser.newContext()).newPage()
 
   await facilitator.goto('/')
-  await facilitator.getByLabel('Your name').fill('Fran')
-  await facilitator.getByLabel('Board name').fill(`E2E two browsers ${Date.now()}`)
+  await facilitator.getByLabel('Name', { exact: true }).fill('Fran')
+  await facilitator.getByLabel('Name this session').fill(`E2E two browsers ${Date.now()}`)
   await facilitator.getByRole('button', { name: '60 min' }).click()
   await facilitator.getByRole('button', { name: 'Create board' }).click()
   await expect(facilitator.getByTestId('room-code')).toHaveText(
@@ -26,7 +26,7 @@ test('facilitator and participant see each other and live changes', async ({ bro
   await participant.goto(link)
   await expect(participant.getByText('You are invited to')).toBeVisible()
   expect((await new AxeBuilder({ page: participant }).analyze()).violations).toEqual([])
-  await participant.getByLabel('Your name').fill('Pat')
+  await participant.getByLabel('Name', { exact: true }).fill('Pat')
   await participant.getByRole('button', { name: 'Join session' }).click()
   await expect(participant.getByText('Waiting for Fran to start the session')).toBeVisible()
 

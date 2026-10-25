@@ -6,7 +6,7 @@ import type { Settings } from '../lib/types'
 import { useNow } from '../state/useNow'
 import type { BoardContext } from './BoardView'
 
-const LENGTHS = [45, 60, 75, 90]
+const LENGTHS = [30, 45, 60, 75]
 const TIE_LABELS: Record<Settings['tie_break'], string> = {
   drag: 'Facilitator decides',
   mini_vote: 'Quick one-dot vote',
@@ -73,7 +73,7 @@ export default function Lobby({ ctx }: { ctx: BoardContext }) {
             >
               <input
                 ref={nameInput}
-                aria-label="Board name"
+                aria-label="Session name"
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') setEditingName(false)
                 }}

@@ -14,7 +14,7 @@ const STEPS = [
   ['Wrap-up', 'Take-aways, actions, and Word and Excel downloads', '5:00'],
 ] as const
 
-const LENGTHS = [45, 60, 75, 90]
+const LENGTHS = [30, 45, 60, 75]
 
 const inputClass =
   'mt-2 h-[52px] w-full rounded-xl border-2 border-line bg-panel px-4 text-[16px] text-ink placeholder:text-muted'
@@ -55,7 +55,7 @@ export default function Home() {
   function join(e: FormEvent) {
     e.preventDefault()
     if (!isValidCode(code)) {
-      setCodeError('Room codes are 8 letters and numbers, like KQ74-M2X9.')
+      setCodeError('Codes are 8 letters and numbers, like KQ74-M2X9.')
       return
     }
     navigate(`/b/${formatCode(normalizeCode(code))}`)
@@ -70,8 +70,8 @@ export default function Home() {
             Run a Lean Coffee session
           </h1>
           <p className="mt-4 max-w-[620px] text-[19px] text-muted">
-            No sign-up. Share the link in Teams, build the agenda together, then download the
-            results as Word and Excel files.
+            No sign-up. Share the link, share your screen, build the agenda together, then download
+            the results as Word and Excel files.
           </p>
           <div className="mt-10">
             <Eyebrow>How a session runs</Eyebrow>
@@ -97,7 +97,7 @@ export default function Home() {
             <form onSubmit={create}>
               <h2 className="text-[22px] font-bold">Start a session</h2>
               <label className="mt-5 block text-[14px] font-bold">
-                Your name
+                Name
                 <input
                   className={inputClass}
                   value={name}
@@ -105,17 +105,16 @@ export default function Home() {
                   maxLength={24}
                   required
                   autoComplete="nickname"
-                  placeholder="Priya"
                 />
               </label>
               <label className="mt-4 block text-[14px] font-bold">
-                Board name <span className="font-medium text-muted">(optional)</span>
+                Name this session <span className="font-medium text-muted">(optional)</span>
                 <input
                   className={inputClass}
                   value={boardName}
                   onChange={(e) => setBoardName(e.target.value)}
                   maxLength={60}
-                  placeholder="Product team sync"
+                  placeholder="Lean Coffee"
                 />
               </label>
               <fieldset className="mt-5">
@@ -134,7 +133,7 @@ export default function Home() {
                   ))}
                 </div>
                 <p className="mt-2 text-[13px] text-muted">
-                  75 minutes is the recommended length. You can change every timer in the lobby.
+                  75 minutes suits most groups. You can change every timer in the lobby.
                 </p>
               </fieldset>
               <Button
@@ -153,13 +152,13 @@ export default function Home() {
           </Card>
           <div className="rounded-2xl border border-line-soft p-7">
             <form onSubmit={join}>
-              <label htmlFor="room-code" className="text-[17px] font-bold">
-                Have a room code?
+              <label htmlFor="room-code" className="text-[15px] font-medium">
+                Enter code
               </label>
               <div className="mt-3 flex gap-2">
                 <input
                   id="room-code"
-                  className="h-[52px] min-w-0 flex-1 rounded-xl border-2 border-line bg-panel px-4 text-[17px] font-bold tracking-[0.08em] uppercase placeholder:text-muted"
+                  className="h-[52px] min-w-0 flex-1 rounded-xl border-2 border-line bg-panel px-4 text-[17px] font-medium tracking-[0.08em] uppercase placeholder:text-muted"
                   value={code}
                   onChange={(e) => {
                     setCode(e.target.value)

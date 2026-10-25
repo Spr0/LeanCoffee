@@ -58,6 +58,13 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
   const recentlyClosed = last?.closed_at ? nowServer - Date.parse(last.closed_at) < 10_000 : false
   const shownRound = round ?? (last && (remaining === 0 || recentlyClosed) ? last : undefined)
   const lastDiscussed = discussed.at(-1)
+  // A Move on vote takes the topic off stage on the server; its result stays up until the next
+  // topic starts, so the facilitator can still override it. Rounds force-closed have no counts.
+  const lastDiscussedRound = lastDiscussed && lastRound(extendRounds, lastDiscussed.id)
+  const movedOn =
+    !current && lastDiscussedRound?.result === 'move_on' && lastDiscussedRound.keep_count !== null
+      ? lastDiscussedRound
+      : undefined
 
   // At zero: chime, and any browser may open the extend vote (the server checks the deadline).
   useAtZero(remaining, current ? state.phase_ends_at : null, () => {
@@ -226,6 +233,23 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
         </>
       ) : (
         <section className="mt-5 rounded-2xl border border-line-soft bg-panel p-8">
+          {movedOn && lastDiscussed && (
+            <div className="mb-8 flex flex-wrap items-center gap-3 rounded-xl border-2 border-teal p-4">
+              <p className="flex-1 text-[17px]" role="status">
+                <b>The group chose to move on.</b> "{lastDiscussed.text}" is now discussed (
+                {movedOn.keep_count} keep going, {movedOn.neutral_count} neutral,{' '}
+                {movedOn.move_on_count} move on).
+              </p>
+              {isFacilitator && (
+                <Button
+                  variant="secondary"
+                  onClick={() => act('extend_topic', { p_board: state.board_id })}
+                >
+                  Extend {formatClock(state.settings.extend_s * 1000)} anyway
+                </Button>
+              )}
+            </div>
+          )}
           {queue[0] ? (
             <>
               <p className="text-[14px] font-bold tracking-[0.1em] text-muted">UP NEXT</p>
@@ -370,7 +394,7 @@ function ExtendPanel({
   roundId: string
   roundLeft: number | null
 }) {
-  const { board, state, userId, isFacilitator, act } = ctx
+  const { board, state, userId, act } = ctx
   const now = useNow(5000)
   const round = board.data.extendRounds.find((r) => r.id === roundId)
   if (!round) return null
@@ -424,19 +448,6 @@ function ExtendPanel({
               ? `The group chose to keep going: ${formatClock(state.settings.extend_s * 1000)} added.`
               : 'The group chose to move on.'}
           </p>
-          {isFacilitator && round.result === 'move_on' && (
-            <>
-              <Button
-                variant="secondary"
-                onClick={() => act('extend_topic', { p_board: state.board_id })}
-              >
-                Extend {formatClock(state.settings.extend_s * 1000)} anyway
-              </Button>
-              <Button onClick={() => act('next_topic', { p_board: state.board_id })}>
-                Next topic
-              </Button>
-            </>
-          )}
         </div>
       )}
       {!closed && (
