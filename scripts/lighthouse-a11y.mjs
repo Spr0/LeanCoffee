@@ -5,11 +5,12 @@
 import { chromium } from 'playwright'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 
 const [base = 'http://127.0.0.1:4173', lhDir] = process.argv.slice(2)
-const lighthouse = (await import(createRequire(join(lhDir, 'x')).resolve('lighthouse'))).default
+const lighthouse = (await import(createRequire(join(resolve(lhDir), 'x')).resolve('lighthouse')))
+  .default
 const PORT = 9333
 const fac = await chromium.launchPersistentContext(mkdtempSync(join(tmpdir(), 'lh-')), {
   args: [`--remote-debugging-port=${PORT}`],
