@@ -225,6 +225,16 @@ export default function Lobby({ ctx }: { ctx: BoardContext }) {
             onChange={(v) => set({ brainstorm_s: v })}
           />
           <Stepper
+            label="Pitch"
+            value={s.pitch_s}
+            display={s.pitch_s === 0 ? 'Off' : `${s.pitch_s} s`}
+            min={0}
+            max={60}
+            step={15}
+            disabled={!isFacilitator}
+            onChange={(v) => set({ pitch_s: Math.round(v / 15) * 15 })}
+          />
+          <Stepper
             label="Voting"
             value={s.vote_s}
             display={formatClock(s.vote_s * 1000)}
@@ -253,6 +263,16 @@ export default function Lobby({ ctx }: { ctx: BoardContext }) {
             step={30}
             disabled={!isFacilitator}
             onChange={(v) => set({ extend_s: v })}
+          />
+          <Stepper
+            label="Wrap-up"
+            value={s.wrapup_s}
+            display={s.wrapup_s === 0 ? 'Off' : formatClock(s.wrapup_s * 1000)}
+            min={0}
+            max={600}
+            step={60}
+            disabled={!isFacilitator}
+            onChange={(v) => set({ wrapup_s: Math.round(v / 60) * 60 })}
           />
         </div>
         <div className="mt-4">
@@ -365,7 +385,8 @@ export default function Lobby({ ctx }: { ctx: BoardContext }) {
               Start brainstorm for {here.length} {here.length === 1 ? 'person' : 'people'}
             </Button>
             <p className="mt-2 text-center text-[13px] text-muted">
-              Everyone sees a {formatClock(s.brainstorm_s * 1000)} clock the moment you start.
+              Everyone sees a {formatClock(s.brainstorm_s * 1000)} clock. You start it when people
+              are ready.
             </p>
           </>
         ) : (

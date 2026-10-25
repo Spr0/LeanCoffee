@@ -1,24 +1,53 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ClockPanel } from '../../components/session/Clock'
+import { Dialog } from '../../components/session/Dialog'
 import { Button } from '../../components/ui'
 import { chime } from '../../lib/chime'
 import { cards, mergedInto } from '../../lib/session'
+import type { Topic } from '../../lib/types'
 import { useAtZero } from '../../state/useCountdown'
-import { Eyebrow, Layout, PageTitle, type PhaseProps } from './common'
+import { Eyebrow, Layout, PageTitle, TimerButtons, type PhaseProps } from './common'
+
+const MAX = 160
+
+/** Dots per person suggested in spec section 3 (Xebia): topics divided by two, 1 to 5. */
+const suggestDots = (topics: number) => Math.min(5, Math.max(1, Math.round(topics / 2)))
 
 export default function Clarify({ ctx, remaining }: PhaseProps) {
   const { board, state, isFacilitator, act } = ctx
   const [selected, setSelected] = useState<string[]>([])
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
+  const [deleting, setDeleting] = useState<Topic | null>(null)
+  const editField = useRef<HTMLTextAreaElement>(null)
+  const returnTo = useRef<string | null>(null)
   const list = cards(board.data.topics)
   const pitching = list.find((t) => t.id === state.pitch_topic_id)
   const pitchIndex = pitching ? list.indexOf(pitching) : -1
   const next = list[pitchIndex + 1]
+  const dots = suggestDots(list.length)
+  const editingId = editing?.id
 
   // A soft clock: chime at zero, never cut anyone off.
   useAtZero(remaining, state.phase_ends_at, chime)
 
+  // Focus moves into the edit box when it opens and back to its Edit button when it closes.
+  useEffect(() => {
+    if (editingId) {
+      returnTo.current = editingId
+      editField.current?.focus()
+    } else if (returnTo.current) {
+      document.getElementById(`edit-${returnTo.current}`)?.focus()
+      returnTo.current = null
+    }
+  }, [editingId])
+
   const toggle = (id: string) =>
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id].slice(-2)))
+
+  async function saveEdit() {
+    if (!editing?.text.trim()) return
+    if (await act('edit_topic', { p_topic: editing.id, p_text: editing.text })) setEditing(null)
+  }
 
   return (
     <Layout
@@ -71,7 +100,9 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
                         {isPitching ? 'PITCHING NOW' : 'SELECTED'}
                       </span>
                     )}
-                    <span className="block text-[17px] font-bold">{t.text}</span>
+                    <span id={`text-${t.id}`} className="block text-[17px] font-bold">
+                      {t.text}
+                    </span>
                     <span className="mt-2 block text-[14px] text-muted">{t.author_name}</span>
                   </>
                 )
@@ -80,15 +111,75 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
                     key={t.id}
                     className={`rounded-xl border-2 bg-panel ${isPitching ? 'border-teal bg-teal-soft' : isSelected ? 'border-teal' : 'border-line-soft'}`}
                   >
-                    {isFacilitator ? (
-                      <button
-                        type="button"
-                        className="w-full p-4 text-left"
-                        aria-pressed={isSelected}
-                        onClick={() => toggle(t.id)}
+                    {isFacilitator && editing?.id === t.id ? (
+                      <form
+                        className="p-4"
+                        onSubmit={(e) => {
+                          e.preventDefault()
+                          void saveEdit()
+                        }}
                       >
-                        {body}
-                      </button>
+                        <textarea
+                          ref={editField}
+                          aria-label="Edit topic"
+                          aria-describedby={`edit-count-${t.id}`}
+                          value={editing.text}
+                          maxLength={MAX}
+                          rows={3}
+                          onChange={(e) =>
+                            setEditing({ id: t.id, text: e.target.value.replace(/\n/g, ' ') })
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') setEditing(null)
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              void saveEdit()
+                            }
+                          }}
+                          className="w-full resize-none rounded-xl border-2 border-teal bg-panel p-3 text-[17px]"
+                        />
+                        <p id={`edit-count-${t.id}`} className="mt-1 text-[13px] text-muted">
+                          {editing.text.length} of {MAX} characters
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <Button type="submit" disabled={!editing.text.trim()}>
+                            Save
+                          </Button>
+                          <Button variant="ghost" onClick={() => setEditing(null)}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </form>
+                    ) : isFacilitator ? (
+                      <>
+                        <button
+                          type="button"
+                          className="w-full p-4 text-left"
+                          aria-pressed={isSelected}
+                          onClick={() => toggle(t.id)}
+                        >
+                          {body}
+                        </button>
+                        {/* Names leave out the topic text (it is the description instead), so the
+                            card's select button stays the only one named after the topic. */}
+                        <div className="flex flex-wrap gap-2 px-4 pb-4">
+                          <Button
+                            id={`edit-${t.id}`}
+                            variant="ghost"
+                            aria-describedby={`text-${t.id}`}
+                            onClick={() => setEditing({ id: t.id, text: t.text })}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            aria-describedby={`text-${t.id}`}
+                            onClick={() => setDeleting(t)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </>
                     ) : (
                       <div className="p-4">{body}</div>
                     )}
@@ -139,6 +230,9 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
               </p>
             </div>
           )}
+          {isFacilitator && pitching && state.settings.pitch_s > 0 && (
+            <TimerButtons ctx={ctx} addSeconds={15} />
+          )}
           {isFacilitator && list.length > 0 && (
             <div className="flex flex-col gap-2">
               <Button
@@ -167,6 +261,25 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
               </p>
             </div>
           )}
+          {isFacilitator && list.length > 0 && (
+            <div>
+              <Eyebrow right={`${state.settings.dots} each`}>Dots per person</Eyebrow>
+              <p className="mt-2 text-[15px]">
+                Suggested: {dots} {dots === 1 ? 'dot' : 'dots'} each (topics / 2, at most 5)
+              </p>
+              {state.settings.dots !== dots && (
+                <Button
+                  variant="secondary"
+                  className="mt-2"
+                  onClick={() =>
+                    act('update_settings', { p_board: state.board_id, p_settings: { dots } })
+                  }
+                >
+                  Use {dots} {dots === 1 ? 'dot' : 'dots'}
+                </Button>
+              )}
+            </div>
+          )}
           {isFacilitator && (
             <div>
               <Button
@@ -181,6 +294,34 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
               </p>
             </div>
           )}
+          <Dialog
+            open={deleting !== null}
+            onClose={() => setDeleting(null)}
+            title="Delete this topic?"
+          >
+            <p className="mt-2 text-[15px] text-muted">
+              "{deleting?.text}" by {deleting?.author_name} is removed for everyone.
+              {deleting &&
+                mergedInto(board.data.topics, deleting.id).length > 0 &&
+                ' Cards merged into it become separate cards again.'}
+            </p>
+            <div className="mt-5 flex justify-end gap-3">
+              <Button variant="ghost" onClick={() => setDeleting(null)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  if (!deleting) return
+                  if (await act('delete_topic', { p_topic: deleting.id })) {
+                    setSelected((s) => s.filter((id) => id !== deleting.id))
+                    setDeleting(null)
+                  }
+                }}
+              >
+                Delete topic
+              </Button>
+            </div>
+          </Dialog>
         </>
       }
     />

@@ -36,6 +36,10 @@ export function securityHeaders(supabaseUrl: string): Record<string, string> {
 /** Invite pages stay out of search engines (robots.txt also disallows /b/). */
 export const NOINDEX_PREFIX = '/b/'
 
+/** Built files under /assets/ carry a content hash in their names, so they never change. */
+export const ASSETS_PREFIX = '/assets/'
+export const ASSET_CACHE = 'public, max-age=31536000, immutable'
+
 export function securityHeadersPlugin(supabaseUrl: string | undefined): Plugin {
   const headers = supabaseUrl ? securityHeaders(supabaseUrl) : null
   return {
@@ -51,6 +55,9 @@ export function securityHeadersPlugin(supabaseUrl: string | undefined): Plugin {
         `${NOINDEX_PREFIX}*`,
         '  X-Robots-Tag: noindex',
         '',
+        `${ASSETS_PREFIX}*`,
+        `  Cache-Control: ${ASSET_CACHE}`,
+        '',
       ]
       this.emitFile({ type: 'asset', fileName: '_headers', source: lines.join('\n') })
     },
@@ -59,6 +66,8 @@ export function securityHeadersPlugin(supabaseUrl: string | undefined): Plugin {
       server.middlewares.use((req, res, next) => {
         for (const [k, v] of Object.entries(headers)) res.setHeader(k, v)
         if (req.url?.startsWith(NOINDEX_PREFIX)) res.setHeader('X-Robots-Tag', 'noindex')
+        // Set before the static server runs, which keeps a header that is already present.
+        if (req.url?.startsWith(ASSETS_PREFIX)) res.setHeader('Cache-Control', ASSET_CACHE)
         next()
       })
     },

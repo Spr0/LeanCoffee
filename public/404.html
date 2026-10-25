@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Not found · Lean Coffee</title>
+    <!-- Self-contained on purpose: no scripts, and the CSP allows inline styles only. -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --ground: #ffffff;
+        --ink: #1e2a28;
+        --muted: #55625f;
+        --teal: #0f766e;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ground: #12151b;
+          --ink: #eef0f4;
+          --muted: #a4adbb;
+          --teal: #2dd4bf;
+        }
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: var(--ground);
+        color: var(--ink);
+        font-family: ui-sans-serif, system-ui, sans-serif;
+      }
+      main {
+        max-width: 520px;
+        padding: 24px 16px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 32px;
+        font-weight: 800;
+      }
+      p {
+        margin: 12px 0 20px;
+        font-size: 17px;
+        color: var(--muted);
+      }
+      a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+        font-size: 17px;
+        font-weight: 700;
+        color: var(--teal);
+      }
+      a:focus-visible {
+        outline: 3px solid var(--teal);
+        outline-offset: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Page not found</h1>
+      <p>This file is not here. If the app was just updated, reload the page to get the new one.</p>
+      <a href="/">Go to the home page</a>
+    </main>
+  </body>
+</html>
