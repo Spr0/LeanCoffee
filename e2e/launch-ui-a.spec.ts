@@ -72,7 +72,7 @@ test('skip and bring back, edit and delete, downloads, owners and the move-on ov
   for (const page of [fran, pat]) await page.getByRole('button', { name: /^Move on/ }).click()
   await expect(pat.getByText('The group chose to move on.')).toBeVisible()
   await expect(pat.getByText('DISCUSSING NOW')).toHaveCount(0)
-  await expect(pat.getByText('UP NEXT')).toBeVisible()
+  await expect(pat.getByText('UP NEXT', { exact: true })).toBeVisible()
   await expect(pat.getByRole('button', { name: /anyway/ })).toHaveCount(0)
   await axe(pat)
   await fran.getByRole('button', { name: 'Extend 3:00 anyway' }).click()
@@ -126,7 +126,7 @@ test('skip and bring back, edit and delete, downloads, owners and the move-on ov
 
   await onStage.getByRole('button', { name: 'Edit "Bravo topic"' }).click()
   await edit.fill('Bravo, renamed on stage')
-  await fran.getByRole('button', { name: 'Save' }).click()
+  await fran.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(region(pat, 'Discussing')).toContainText('Bravo, renamed on stage')
 
   await queue.getByRole('button', { name: 'Delete "Delta topic"' }).click()

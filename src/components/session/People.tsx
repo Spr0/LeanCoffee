@@ -6,11 +6,13 @@ import { useNow } from '../../state/useNow'
 import { Avatar, Button, Switch } from '../ui'
 import { Dialog } from './Dialog'
 
+const RECONNECTING_AFTER_MS = 90_000
+
 /** Sidebar footer: facilitator, handover, people management, sound. */
 export function PeoplePanel({ ctx }: { ctx: BoardContext }) {
   const { board, state, userId, isFacilitator, act } = ctx
   const now = useNow(5000)
-  const [dialog, setDialog] = useState<'pass' | 'people' | 'end' | null>(null)
+  const [dialog, setDialog] = useState<'pass' | 'people' | null>(null)
   const [choice, setChoice] = useState<string | null>(null)
   const [muted, setMutedState] = useState(isMuted)
   const people = board.data.participants
@@ -19,11 +21,13 @@ export function PeoplePanel({ ctx }: { ctx: BoardContext }) {
   const others = present.filter((p) => p.user_id !== userId)
   const chosen = others.find((p) => p.user_id === choice)
   const canReclaim = !isFacilitator && state.owner_user_id === userId
-  // Spec section 8: everyone else sees when the facilitator's heartbeat has gone quiet.
+  // Spec section 8: everyone else sees when the facilitator's heartbeat has gone quiet. Browsers
+  // slow timers in hidden tabs to about once a minute, so wait 90 s before saying so.
   const reconnecting =
     !isFacilitator &&
+    state.phase !== 'ended' &&
     facilitator !== undefined &&
-    !isPresent(facilitator.last_seen_at, now, board.offsetMs)
+    !isPresent(facilitator.last_seen_at, now, board.offsetMs, RECONNECTING_AFTER_MS)
   // Wrap-up has its own End session button; before that it lives here (spec F25).
   const canEnd = isFacilitator && state.phase !== 'wrapup' && state.phase !== 'ended'
 
@@ -52,16 +56,7 @@ export function PeoplePanel({ ctx }: { ctx: BoardContext }) {
           <Button variant="ghost" onClick={() => setDialog('people')}>
             Manage people
           </Button>
-          {canEnd && (
-            // Marked "!": the ghost variant's own border and text colors come later in the CSS.
-            <Button
-              variant="ghost"
-              className="col-span-2 border-danger! text-danger!"
-              onClick={() => setDialog('end')}
-            >
-              End session
-            </Button>
-          )}
+          {canEnd && <EndSession ctx={ctx} className="col-span-2" />}
         </div>
       )}
       {canReclaim && (
@@ -196,25 +191,40 @@ export function PeoplePanel({ ctx }: { ctx: BoardContext }) {
           <Button onClick={() => setDialog(null)}>Done</Button>
         </div>
       </Dialog>
+    </div>
+  )
+}
 
-      <Dialog open={dialog === 'end'} onClose={() => setDialog(null)} title="End the session now?">
+/** Facilitator: end the session from any phase before Wrap-up, after a confirmation (spec F25). */
+export function EndSession({ ctx, className = '' }: { ctx: BoardContext; className?: string }) {
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  return (
+    <>
+      <Button variant="dangerOutline" className={className} onClick={() => setOpen(true)}>
+        End session
+      </Button>
+      <Dialog open={open} onClose={() => setOpen(false)} title="End the session now?">
         <p className="mt-2 text-[15px] text-muted">
           The board becomes read-only for everyone. Downloads stay available.
         </p>
         <div className="mt-5 flex justify-end gap-3">
-          <Button variant="ghost" onClick={() => setDialog(null)}>
+          <Button variant="ghost" onClick={() => setOpen(false)}>
             Cancel
           </Button>
           <Button
-            className="bg-danger! text-ground!"
+            variant="danger"
+            disabled={busy}
             onClick={async () => {
-              if (await act('end_session', { p_board: state.board_id })) setDialog(null)
+              setBusy(true)
+              if (await ctx.act('end_session', { p_board: ctx.state.board_id })) setOpen(false)
+              setBusy(false)
             }}
           >
             End session now
           </Button>
         </div>
       </Dialog>
-    </div>
+    </>
   )
 }

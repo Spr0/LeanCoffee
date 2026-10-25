@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent } from 'react'
+import { useId, useRef, useState, type FormEvent } from 'react'
 import { RingTimer } from '../../components/session/Clock'
 import { Button } from '../../components/ui'
 import { chime } from '../../lib/chime'
@@ -35,6 +35,7 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
   const { topics, extendRounds, actions, participants } = board.data
   const [view, setView] = useState<'stage' | 'board'>('stage')
   const [note, setNote] = useState('')
+  const queueList = useRef<HTMLOListElement>(null)
   const now = useNow(1000)
   const nowServer = now + board.offsetMs
   const current = topics.find((t) => t.id === state.current_topic_id)
@@ -56,8 +57,11 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
           state.settings.discuss_s,
           state.settings.wrapup_s,
         )
-  const totalMs =
-    (current && current.extensions > 0 ? state.settings.extend_s : state.settings.discuss_s) * 1000
+  // A topic brought back after an extension restarts at the full discussion time.
+  const totalMs = Math.max(
+    remaining ?? 0,
+    (current && current.extensions > 0 ? state.settings.extend_s : state.settings.discuss_s) * 1000,
+  )
   const roundLeft = round ? Math.max(0, Date.parse(round.closes_at) - nowServer) : null
   // Keep a closed vote's result on screen for 10 s, or while the clock sits at zero.
   const recentlyClosed = last?.closed_at ? nowServer - Date.parse(last.closed_at) < 10_000 : false
@@ -266,7 +270,11 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
             </>
           ) : (
             <>
-              <h1 className="text-[36px] font-extrabold">Every topic has been discussed</h1>
+              <h1 className="text-[36px] font-extrabold">
+                {skipped.length > 0
+                  ? 'No topics left in the queue'
+                  : 'Every topic has been discussed'}
+              </h1>
               {isFacilitator && (
                 <Button
                   className="mt-6 h-14 px-8"
@@ -302,7 +310,7 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
       </div>
       <div>
         <Eyebrow right={`${queue.length}`}>Up next</Eyebrow>
-        <ol className="mt-2 flex flex-col gap-2">
+        <ol ref={queueList} tabIndex={-1} aria-label="Up next" className="mt-2 flex flex-col gap-2">
           {queue.map((t, i) => (
             <li
               key={t.id}
@@ -348,7 +356,17 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
                 className="flex items-center gap-2 rounded-xl border-2 border-dashed border-line bg-panel p-3"
               >
                 <span className="flex-1 text-[15px] break-words">{t.text}</span>
-                {isFacilitator && <BringBack ctx={ctx} topic={t} onBack={setNote} />}
+                {isFacilitator && (
+                  <BringBack
+                    ctx={ctx}
+                    topic={t}
+                    onBack={(message) => {
+                      // The button disappears, so focus moves to the queue it returned to.
+                      setNote(message)
+                      queueList.current?.focus()
+                    }}
+                  />
+                )}
               </li>
             ))}
           </ul>

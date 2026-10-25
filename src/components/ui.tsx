@@ -1,11 +1,13 @@
 import { useId, type ButtonHTMLAttributes, type ReactNode } from 'react'
 
-type Variant = 'primary' | 'secondary' | 'ghost'
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'dangerOutline'
 
 const VARIANTS: Record<Variant, string> = {
   primary: 'bg-teal text-on-teal hover:opacity-90',
   secondary: 'border-2 border-teal text-teal bg-panel hover:bg-teal-soft',
   ghost: 'border-2 border-line text-ink bg-panel hover:bg-surface',
+  danger: 'bg-danger text-ground hover:opacity-90',
+  dangerOutline: 'border-2 border-danger text-danger bg-panel hover:bg-surface',
 }
 
 export function Button({

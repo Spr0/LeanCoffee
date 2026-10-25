@@ -4,16 +4,6 @@ import BoardTab from './BoardTab'
 import { makeCtx, makeTopic } from './testBoard'
 
 // jsdom has no modal dialogs; open and close by attribute, as the browser would.
-beforeAll(() => {
-  HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
-    this.setAttribute('open', '')
-  }
-  HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
-    this.removeAttribute('open')
-    this.dispatchEvent(new Event('close'))
-  }
-})
-
 const TOPICS = [
   makeTopic('t1', 'Open topic', 'open', 1),
   makeTopic('t2', 'On stage', 'discussing', 2),

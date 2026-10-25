@@ -2,27 +2,30 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { makeCtx, person } from '../../test/boardContext'
 import { PeoplePanel } from './People'
 
-beforeAll(() => {
-  HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
-    this.setAttribute('open', '')
-  }
-  HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
-    this.removeAttribute('open')
-    this.dispatchEvent(new Event('close'))
-  }
-})
-
+const twoMinutesAgo = new Date(Date.now() - 120_000).toISOString()
 const minuteAgo = new Date(Date.now() - 60_000).toISOString()
 
 describe('PeoplePanel: facilitator reconnecting (spec section 8)', () => {
   it('shows and announces when the facilitator has gone quiet', () => {
-    const participants = [person('u1', 'Fran', minuteAgo), person('u2', 'Pat')]
+    const participants = [person('u1', 'Fran', twoMinutesAgo), person('u2', 'Pat')]
     render(<PeoplePanel ctx={makeCtx({ userId: 'u2', state: { phase: 'vote' }, participants })} />)
     expect(screen.getByText('(reconnecting)')).toBeInTheDocument()
     expect(screen.getByText('The facilitator, Fran, is reconnecting.')).toHaveAttribute(
       'role',
       'status',
     )
+  })
+
+  it('waits out a slow heartbeat from a background tab', () => {
+    const participants = [person('u1', 'Fran', minuteAgo), person('u2', 'Pat')]
+    render(<PeoplePanel ctx={makeCtx({ userId: 'u2', state: { phase: 'vote' }, participants })} />)
+    expect(screen.queryByText('(reconnecting)')).toBeNull()
+  })
+
+  it('says nothing once the session has ended', () => {
+    const participants = [person('u1', 'Fran', twoMinutesAgo), person('u2', 'Pat')]
+    render(<PeoplePanel ctx={makeCtx({ userId: 'u2', state: { phase: 'ended' }, participants })} />)
+    expect(screen.queryByText('(reconnecting)')).toBeNull()
   })
 
   it('says nothing while the facilitator is connected', () => {

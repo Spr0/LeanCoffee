@@ -54,7 +54,15 @@ Never put a `service_role` or `sb_secret_` key in the repo, the browser bundle, 
 | `npm run test:e2e`  | Playwright with axe-core (builds and serves the app)              |
 | `npm run db:test`   | pgTAP against a local Supabase stack (`npx supabase start` first) |
 
-CI (`.github/workflows/ci.yml`) runs all of these plus `npm audit --audit-level=high` and a full-history gitleaks scan.
+CI (`.github/workflows/ci.yml`) runs all of these plus `npm audit --audit-level=high` and a full-history gitleaks scan, against a throwaway local Supabase stack.
+
+**Which database the browser tests use.** `npm run test:e2e` reads `.env.local`, and there is only one Supabase project: production. Since launch (2026-10-25), run only the light checks against production or a preview (they create one or two boards, which the daily purge deletes after 7 days):
+
+```sh
+E2E_BASE_URL=https://leancoffee-app.netlify.app npx playwright test e2e/smoke.spec.ts e2e/two-browsers.spec.ts e2e/security.spec.ts --grep-invert "API probing"
+```
+
+The load test, the API probing and the full-session suites run in CI only. `.github/workflows/live-check.yml` re-checks the live security headers daily and after every push to `main`.
 
 ## Export caveat
 
@@ -73,11 +81,15 @@ Netlify builds every push from GitHub (`netlify.toml`): `npm run build`, then `s
 
 The build fails if `VITE_SUPABASE_URL` is missing, because the security headers (`dist/_headers`) are generated from it.
 
-Before promoting to production, run the whole browser suite against the preview (about 4 minutes; it creates a few test boards in the production database, which the daily purge removes after 7 days):
+Before promoting to production, CI must be green on the branch, then run the light browser checks against its preview:
 
 ```sh
-E2E_BASE_URL=https://<branch>--leancoffee-app.netlify.app npx playwright test
+E2E_BASE_URL=https://<branch>--leancoffee-app.netlify.app npx playwright test e2e/smoke.spec.ts e2e/two-browsers.spec.ts e2e/security.spec.ts --grep-invert "API probing"
 ```
+
+### Database changes
+
+There is no staging database (Supabase branching is a paid feature). Each migration in `supabase/migrations/` is proven in CI on a throwaway local Supabase stack (pgTAP, `plpgsql_check` and the browser suite), then applied by hand: paste the file into the Supabase SQL Editor and run it, before or together with the deploy that needs it. The remote migration history does not list every file (decision D30), so run `supabase migration repair` before ever using `supabase db push`.
 
 ## Keeping the free database awake
 
@@ -86,4 +98,4 @@ Supabase pauses free projects after 7 days with little activity. Two independent
 1. **Netlify scheduled function** `netlify/functions/keepalive.mts` (`@daily`, UTC). Runs only on the published production deploy. Netlify shows its runs under Logs, Functions.
 2. **GitHub Actions** `.github/workflows/keepalive.yml` (06:23 UTC daily, also runnable by hand from the Actions tab). GitHub can disable scheduled workflows in repositories with no recent activity, which is why there are two.
 
-**If the project is paused anyway:** open the Supabase dashboard, choose the project, and select **Resume project**. Paused free projects can be restored for up to a year after pausing. Data is kept while paused. After resuming, open the app once to confirm it loads.
+**If the project is paused anyway:** open the Supabase dashboard, choose the project, and select **Resume project**. Paused free projects can be restored from the dashboard for 90 days; after that, download the backup from the dashboard and restore it into a new project ([Supabase: project pausing](https://supabase.com/docs/guides/platform/free-project-pausing)). Data is kept while paused. After resuming, open the app once to confirm it loads.

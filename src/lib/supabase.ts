@@ -52,6 +52,13 @@ const MESSAGES: Record<string, string> = {
   cannot_remove_self: 'You cannot remove yourself.',
   cannot_remove_owner: 'The board creator cannot be removed.',
   not_owner: 'Only the board creator can take control back without the recovery link.',
+  topic_unavailable: 'That topic has changed or is gone. Check the board.',
+  topic_in_progress: 'That topic is being discussed. Move to the next topic first.',
+  not_allowed: 'That is not allowed right now.',
+  no_current_topic: 'There is no topic to extend.',
+  timer_not_running: 'The clock is not running.',
+  timer_not_paused: 'The clock is already running.',
+  round_closed: 'That vote has closed.',
   network: 'Connection problem. Your last change may not have saved.',
 }
 

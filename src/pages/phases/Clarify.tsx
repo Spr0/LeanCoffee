@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { ClockPanel } from '../../components/session/Clock'
-import { Dialog } from '../../components/session/Dialog'
 import { Button } from '../../components/ui'
 import { chime } from '../../lib/chime'
 import { cards, mergedInto } from '../../lib/session'
 import type { Topic } from '../../lib/types'
 import { useAtZero } from '../../state/useCountdown'
 import { Eyebrow, Layout, PageTitle, TimerButtons, type PhaseProps } from './common'
+import { DeleteTopicDialog } from './TopicTools'
 
 const MAX = 160
 
@@ -19,6 +19,7 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
   const [deleting, setDeleting] = useState<Topic | null>(null)
   const editField = useRef<HTMLTextAreaElement>(null)
+  const topicList = useRef<HTMLUListElement>(null)
   const returnTo = useRef<string | null>(null)
   const list = cards(board.data.topics)
   const pitching = list.find((t) => t.id === state.pitch_topic_id)
@@ -88,7 +89,12 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
               topics to the queue.
             </p>
           ) : (
-            <ul className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <ul
+              ref={topicList}
+              tabIndex={-1}
+              aria-label="Topics"
+              className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
+            >
               {list.map((t) => {
                 const isPitching = t.id === state.pitch_topic_id
                 const isSelected = selected.includes(t.id)
@@ -171,13 +177,16 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
                           >
                             Edit
                           </Button>
-                          <Button
-                            variant="ghost"
-                            aria-describedby={`text-${t.id}`}
-                            onClick={() => setDeleting(t)}
-                          >
-                            Delete
-                          </Button>
+                          {/* Deleting the card being pitched would leave its clock running. */}
+                          {!isPitching && (
+                            <Button
+                              variant="ghost"
+                              aria-describedby={`text-${t.id}`}
+                              onClick={() => setDeleting(t)}
+                            >
+                              Delete
+                            </Button>
+                          )}
                         </div>
                       </>
                     ) : (
@@ -242,12 +251,20 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
               >
                 {pitching ? (next ? 'Next pitch' : 'Last pitch done') : 'Start pitches'}
               </Button>
-              {pitching && (
+              {pitching ? (
                 <Button
                   variant="secondary"
                   onClick={() => act('set_pitch', { p_board: state.board_id, p_topic: null })}
                 >
                   Stop pitching
+                </Button>
+              ) : (
+                // When the cards already speak for themselves, go straight to voting.
+                <Button
+                  variant="secondary"
+                  onClick={() => act('start_phase', { p_board: state.board_id, p_phase: 'vote' })}
+                >
+                  Skip pitches
                 </Button>
               )}
             </div>
@@ -267,17 +284,18 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
               <p className="mt-2 text-[15px]">
                 Suggested: {dots} {dots === 1 ? 'dot' : 'dots'} each (topics / 2, at most 5)
               </p>
-              {state.settings.dots !== dots && (
-                <Button
-                  variant="secondary"
-                  className="mt-2"
-                  onClick={() =>
-                    act('update_settings', { p_board: state.board_id, p_settings: { dots } })
-                  }
-                >
-                  Use {dots} {dots === 1 ? 'dot' : 'dots'}
-                </Button>
-              )}
+              {/* Stays on screen once applied, so keyboard focus is not lost. */}
+              <Button
+                variant="secondary"
+                className="mt-2"
+                disabled={state.settings.dots === dots}
+                onClick={() =>
+                  act('update_settings', { p_board: state.board_id, p_settings: { dots } })
+                }
+              >
+                {state.settings.dots === dots ? 'Using' : 'Use'} {dots}{' '}
+                {dots === 1 ? 'dot' : 'dots'}
+              </Button>
             </div>
           )}
           {isFacilitator && (
@@ -294,34 +312,15 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
               </p>
             </div>
           )}
-          <Dialog
-            open={deleting !== null}
+          <DeleteTopicDialog
+            ctx={ctx}
+            topic={deleting}
             onClose={() => setDeleting(null)}
-            title="Delete this topic?"
-          >
-            <p className="mt-2 text-[15px] text-muted">
-              "{deleting?.text}" by {deleting?.author_name} is removed for everyone.
-              {deleting &&
-                mergedInto(board.data.topics, deleting.id).length > 0 &&
-                ' Cards merged into it become separate cards again.'}
-            </p>
-            <div className="mt-5 flex justify-end gap-3">
-              <Button variant="ghost" onClick={() => setDeleting(null)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={async () => {
-                  if (!deleting) return
-                  if (await act('delete_topic', { p_topic: deleting.id })) {
-                    setSelected((s) => s.filter((id) => id !== deleting.id))
-                    setDeleting(null)
-                  }
-                }}
-              >
-                Delete topic
-              </Button>
-            </div>
-          </Dialog>
+            onDeleted={() => {
+              setSelected((ids) => ids.filter((id) => id !== deleting?.id))
+              topicList.current?.focus()
+            }}
+          />
         </>
       }
     />

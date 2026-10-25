@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 import { Header } from '../components/Header'
+import { InviteButton } from '../components/session/Invite'
 import { Button } from '../components/ui'
 import { navigate } from '../lib/router'
 import { AppError, rpc } from '../lib/supabase'
@@ -96,9 +97,7 @@ export default function BoardView({
               <span className="hidden max-w-[320px] truncate text-ink sm:inline">
                 {state.name || 'Lean Coffee'}
               </span>
-              <span className="rounded-md bg-surface px-2 py-1 text-[13px] font-extrabold tracking-[0.08em] text-ink">
-                {code}
-              </span>
+              <InviteButton ctx={ctx} />
             </>
           )
         }

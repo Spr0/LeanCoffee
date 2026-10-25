@@ -18,6 +18,12 @@ export default function BoardTab({
   const [editing, setEditing] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<Topic | null>(null)
   const [note, setNote] = useState('')
+  const queueHeading = useRef<HTMLHeadingElement>(null)
+  // The pressed button disappears with its card, so focus moves to a heading that stays.
+  const announce = (message: string) => {
+    setNote(message)
+    queueHeading.current?.focus()
+  }
   const all = cards(topics)
   const skipped = all.filter((t) => t.status === 'skipped')
   const columns = [
@@ -32,7 +38,11 @@ export default function BoardTab({
   ]
   const column = (title: string, items: Topic[]) => (
     <section key={title} aria-label={title} className="rounded-2xl bg-surface p-3">
-      <h2 className="flex justify-between px-1 text-[17px] font-bold">
+      <h2
+        ref={title === 'To discuss' ? queueHeading : undefined}
+        tabIndex={title === 'To discuss' ? -1 : undefined}
+        className="flex justify-between px-1 text-[17px] font-bold"
+      >
         {title} <span className="text-muted">{items.length}</span>
       </h2>
       <ul className="mt-2 flex flex-col gap-2">
@@ -45,7 +55,7 @@ export default function BoardTab({
             editing={editing === t.id}
             onEdit={setEditing}
             onDelete={setDeleting}
-            onNote={setNote}
+            onNote={announce}
           />
         ))}
       </ul>
@@ -82,7 +92,7 @@ export default function BoardTab({
         ctx={ctx}
         topic={deleting}
         onClose={() => setDeleting(null)}
-        onDeleted={setNote}
+        onDeleted={announce}
       />
     </div>
   )

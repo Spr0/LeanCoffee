@@ -151,6 +151,8 @@ test('six people run a whole session', async ({ browser }) => {
 
   // Discuss: first topic, two extensions by vote, actions.
   await fran.getByRole('button', { name: /Start the .* clock/ }).click()
+  // The up-next screen also titles the topic, so wait for the stage itself.
+  await expect(pat.getByText('DISCUSSING NOW')).toBeVisible()
   await expect(
     pat.getByRole('heading', { level: 1, name: 'Onboarding remote hires' }),
   ).toBeVisible()
@@ -166,7 +168,7 @@ test('six people run a whole session', async ({ browser }) => {
     await expect(pat.getByText(`Extended ×${extension}`)).toBeVisible()
   }
   await pat.getByLabel('New action').fill('Draft a two-week onboarding checklist')
-  await pat.getByLabel('Action owner').selectOption({ label: 'Owner: Pat' })
+  await pat.getByLabel('Action owner').fill('Pat')
   await pat.getByRole('button', { name: 'Add action' }).click()
   await expect(fran.getByText('Draft a two-week onboarding checklist')).toBeVisible()
 

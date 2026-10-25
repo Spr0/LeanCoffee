@@ -3,16 +3,6 @@ import { makeCtx, topic } from '../../test/boardContext'
 import Clarify from './Clarify'
 
 // jsdom has no modal dialogs; open and close by attribute.
-beforeAll(() => {
-  HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
-    this.setAttribute('open', '')
-  }
-  HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
-    this.removeAttribute('open')
-    this.dispatchEvent(new Event('close'))
-  }
-})
-
 const NINE = Array.from({ length: 9 }, (_, i) => topic(`t${i + 1}`, `Topic ${i + 1}`))
 const clarify = { phase: 'clarify' as const }
 
@@ -29,7 +19,7 @@ describe('Clarify dots suggestion (spec section 3)', () => {
     })
   })
 
-  it('counts merged cards once and hides the button when it already matches', () => {
+  it('counts merged cards once and disables the button when it already matches', () => {
     const topics = [
       topic('t1', 'One'),
       topic('t2', 'Two'),
@@ -40,7 +30,7 @@ describe('Clarify dots suggestion (spec section 3)', () => {
       <Clarify ctx={makeCtx({ state: clarify, topics, settings: { dots: 2 } })} remaining={null} />,
     )
     expect(screen.getByText('Suggested: 2 dots each (topics / 2, at most 5)')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^Use / })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Using 2 dots' })).toBeDisabled()
   })
 
   it('never suggests fewer than one dot', () => {
@@ -97,7 +87,8 @@ describe('Clarify facilitator edit and delete', () => {
     render(<Clarify ctx={ctx} remaining={null} />)
     fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0] as HTMLElement)
     const dialog = screen.getByRole('dialog', { name: 'Delete this topic?' })
-    expect(dialog).toHaveTextContent('"Code review turnaround" by Pat is removed for everyone.')
+    expect(dialog).toHaveTextContent('Code review turnaround')
+    expect(dialog).toHaveTextContent('It is removed for everyone')
     expect(ctx.act).not.toHaveBeenCalled()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete topic' }))
     expect(ctx.act).toHaveBeenCalledWith('delete_topic', { p_topic: 't1' })
@@ -122,5 +113,23 @@ describe('Clarify pitch timer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove 15 seconds' }))
     expect(ctx.act).toHaveBeenCalledWith('timer_adjust', { p_board: 'b1', p_delta_s: -15 })
     expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled()
+  })
+})
+
+describe('Clarify skip pitches', () => {
+  it('goes straight to voting when the cards already speak for themselves', () => {
+    const ctx = makeCtx({ state: clarify, topics: [topic('t1', 'One')] })
+    render(<Clarify ctx={ctx} remaining={null} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Skip pitches' }))
+    expect(ctx.act).toHaveBeenCalledWith('start_phase', { p_board: 'b1', p_phase: 'vote' })
+  })
+
+  it('is replaced by Stop pitching once pitches start, and Delete leaves the pitched card', () => {
+    const state = { phase: 'clarify' as const, pitch_topic_id: 't1' }
+    const topics = [topic('t1', 'One'), topic('t2', 'Two')]
+    render(<Clarify ctx={makeCtx({ state, topics })} remaining={null} />)
+    expect(screen.queryByRole('button', { name: 'Skip pitches' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Stop pitching' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(1)
   })
 })

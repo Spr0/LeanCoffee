@@ -191,8 +191,8 @@ export default function WrapUp({ ctx, remaining }: PhaseProps) {
           {isFacilitator && !ended && (
             <div>
               <Button
-                variant="ghost"
-                className="h-12 w-full border-danger text-danger"
+                variant="dangerOutline"
+                className="h-12 w-full"
                 onClick={() => act('end_session', { p_board: state.board_id })}
               >
                 End session

@@ -5,7 +5,7 @@ import { guard } from './guard.ts'
 // Launch fixes, client side: the Brainstorm clock waits for the facilitator (D64), -1 min, the
 // pitch and wrap-up steppers, the dots suggestion, facilitator edit and delete in Clarify,
 // "(reconnecting)" for a vanished facilitator, and ending the session early. One board.
-test.setTimeout(240_000)
+test.setTimeout(300_000)
 
 const btn = (page: Page, name: string) => page.getByRole('button', { name, exact: true })
 const card = (page: Page, text: string) => page.getByRole('listitem').filter({ hasText: text })
@@ -95,7 +95,7 @@ test('launch fixes for the facilitator controls', async ({ browser }) => {
   await expect(fran.getByText('Suggested: 2 dots each (topics / 2, at most 5)')).toBeVisible()
   await btn(fran, 'Use 2 dots').click()
   await expect(fran.getByText(/Opens 2 dots each/)).toBeVisible()
-  await expect(btn(fran, 'Use 2 dots')).toHaveCount(0)
+  await expect(btn(fran, 'Using 2 dots')).toBeDisabled()
 
   // Facilitator edit: inline, with a counter; Enter saves, Escape cancels.
   await card(fran, 'Alpha topic').getByRole('button', { name: 'Edit', exact: true }).click()
@@ -111,6 +111,7 @@ test('launch fixes for the facilitator controls', async ({ browser }) => {
   await box.fill('This should not be saved')
   await box.press('Escape')
   await expect(box).toHaveCount(0)
+  await expect(card(fran, 'Bravo topic')).not.toContainText('This should not be saved')
   await expect(
     card(fran, 'Bravo topic').getByRole('button', { name: 'Edit', exact: true }),
   ).toBeFocused()
@@ -118,7 +119,8 @@ test('launch fixes for the facilitator controls', async ({ browser }) => {
   // Facilitator delete, after a confirmation.
   await card(fran, 'Charlie topic').getByRole('button', { name: 'Delete', exact: true }).click()
   const confirmDelete = fran.getByRole('dialog', { name: 'Delete this topic?' })
-  await expect(confirmDelete).toContainText('"Charlie topic" by Pat is removed for everyone.')
+  await expect(confirmDelete).toContainText('Charlie topic')
+  await expect(confirmDelete).toContainText('It is removed for everyone')
   expect(await axe(fran, 'clarify, delete dialog')).toEqual([])
   await confirmDelete.getByRole('button', { name: 'Delete topic' }).click()
   await expect(pat.getByText('Charlie topic', { exact: true })).toHaveCount(0)
@@ -140,9 +142,9 @@ test('launch fixes for the facilitator controls', async ({ browser }) => {
   await axeBoth(fran, 'clarify, pitching')
   await btn(fran, 'Stop pitching').click()
 
-  // The facilitator's tab closes: others see "(reconnecting)" once the 45 s window passes.
+  // The facilitator's tab closes: others see "(reconnecting)" after 90 s without a heartbeat.
   await fran.close()
-  await expect(pat.getByText('(reconnecting)')).toBeVisible({ timeout: 70_000 })
+  await expect(pat.getByText('(reconnecting)')).toBeVisible({ timeout: 120_000 })
   await expect(pat.getByText('The facilitator, Fran, is reconnecting.')).toBeAttached()
   await axeBoth(pat, 'clarify, facilitator reconnecting')
   fran = await franContext.newPage()

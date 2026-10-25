@@ -33,7 +33,7 @@ export function securityHeaders(supabaseUrl: string): Record<string, string> {
   }
 }
 
-/** Invite pages stay out of search engines (robots.txt also disallows /b/). */
+/** Invite pages stay out of search engines; robots.txt allows /b/ so crawlers can see this (D53). */
 export const NOINDEX_PREFIX = '/b/'
 
 /** Built files under /assets/ carry a content hash in their names, so they never change. */

@@ -105,7 +105,7 @@ test('script-like input is shown as text everywhere and never runs', async ({ br
   await fac.getByRole('button', { name: 'Start discussing' }).click()
   await fac.getByRole('button', { name: /Start the .* clock/ }).click()
   await fac.getByLabel('New action').fill('=HYPERLINK("http://example.com","x")')
-  await fac.getByLabel('Action owner').selectOption({ index: 2 })
+  await fac.getByLabel('Action owner').fill(NAME_PAYLOAD)
   await fac.getByRole('button', { name: 'Add action' }).click()
   await expect(pat.getByText('=HYPERLINK("http://example.com","x")')).toBeVisible()
   await fac.getByRole('button', { name: 'Next topic', exact: true }).click()

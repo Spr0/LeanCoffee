@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Avatar, Button, Eyebrow, Stepper, Switch } from '../components/ui'
+import { inviteLink, inviteMessage, useCopy } from '../components/session/Invite'
+import { EndSession } from '../components/session/People'
 import { readRecoveryToken, recoveryLink } from '../lib/recovery'
 import { formatClock, isPresent } from '../lib/time'
 import type { Settings } from '../lib/types'
@@ -11,20 +13,6 @@ const TIE_LABELS: Record<Settings['tie_break'], string> = {
   drag: 'Facilitator decides',
   mini_vote: 'Quick one-dot vote',
   random: 'Random draw',
-}
-
-function useCopy(): [string | null, (key: string, text: string) => void] {
-  const [copied, setCopied] = useState<string | null>(null)
-  const copy = (key: string, text: string) => {
-    void navigator.clipboard?.writeText(text).then(
-      () => {
-        setCopied(key)
-        window.setTimeout(() => setCopied(null), 2000)
-      },
-      () => setCopied(null),
-    )
-  }
-  return [copied, copy]
 }
 
 export default function Lobby({ ctx }: { ctx: BoardContext }) {
@@ -52,7 +40,7 @@ export default function Lobby({ ctx }: { ctx: BoardContext }) {
     .filter((p) => isPresent(p.last_seen_at, now, board.offsetMs))
     .sort((a, b) => a.joined_at.localeCompare(b.joined_at))
   const facilitator = board.data.participants.find((p) => p.user_id === state.facilitator_user_id)
-  const link = `${window.location.origin}/b/${code}`
+  const link = inviteLink(code)
   const token = state.owner_user_id === userId ? readRecoveryToken(boardId) : null
 
   const set = (patch: Partial<Settings>) =>
@@ -160,6 +148,14 @@ export default function Lobby({ ctx }: { ctx: BoardContext }) {
             />
             <Button onClick={() => copy('link', link)}>
               {copied === 'link' ? 'Copied' : 'Copy link'}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() =>
+                copy('message', inviteMessage(state.name, code, state.requires_passcode))
+              }
+            >
+              {copied === 'message' ? 'Copied' : 'Copy invite message'}
             </Button>
           </div>
         </div>
@@ -388,6 +384,10 @@ export default function Lobby({ ctx }: { ctx: BoardContext }) {
               Everyone sees a {formatClock(s.brainstorm_s * 1000)} clock. You start it when people
               are ready.
             </p>
+            {/* Spec F25: a board can be closed before it starts, such as after a leaked link. */}
+            <div className="mt-4 flex justify-center">
+              <EndSession ctx={ctx} />
+            </div>
           </>
         ) : (
           <p

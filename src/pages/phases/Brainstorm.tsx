@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ClockPanel } from '../../components/session/Clock'
 import { Button } from '../../components/ui'
 import { chime } from '../../lib/chime'
@@ -25,6 +25,16 @@ export default function Brainstorm({ ctx, remaining }: PhaseProps) {
   // Participants hear once that the clock started, but only if they saw it stopped.
   const [sawStopped, setSawStopped] = useState(notStarted)
   if (notStarted && !sawStopped) setSawStopped(true)
+  // The Start button is replaced by the timer controls; focus follows to Pause.
+  const [starting, setStarting] = useState(false)
+  const controls = useRef<HTMLDivElement>(null)
+  const startedHere = useRef(false)
+  useEffect(() => {
+    if (!notStarted && startedHere.current) {
+      startedHere.current = false
+      controls.current?.querySelector('button')?.focus()
+    }
+  }, [notStarted])
 
   useAtZero(remaining, state.phase_ends_at, () => {
     chime()
@@ -194,12 +204,20 @@ export default function Brainstorm({ ctx, remaining }: PhaseProps) {
             </p>
           )}
           {isFacilitator && (
-            <div className="flex flex-col gap-2">
+            <div ref={controls} className="flex flex-col gap-2">
               {notStarted ? (
                 <>
                   <Button
                     className="h-14 text-[17px]"
-                    onClick={() => act('timer_resume', { p_board: state.board_id })}
+                    disabled={starting}
+                    onClick={async () => {
+                      // Set first: the live update can arrive before the call returns.
+                      startedHere.current = true
+                      setStarting(true)
+                      if (!(await act('timer_resume', { p_board: state.board_id })))
+                        startedHere.current = false
+                      setStarting(false)
+                    }}
                   >
                     Start the {formatClock(state.settings.brainstorm_s * 1000)} clock
                   </Button>
