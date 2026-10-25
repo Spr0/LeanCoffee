@@ -1,11 +1,11 @@
 import { useState, type FormEvent } from 'react'
-import { download, previewName } from '../../lib/export/download'
-import type { BoardData } from '../../state/useBoard'
 import { ClockPanel } from '../../components/session/Clock'
 import { Avatar, Button } from '../../components/ui'
 import { cards } from '../../lib/session'
 import { useNow } from '../../state/useNow'
-import { Eyebrow, Layout, PageTitle, type PhaseProps } from './common'
+import { Eyebrow, Layout, PageTitle, TimerButtons, type PhaseProps } from './common'
+import Downloads from './Downloads'
+import { OwnerField, ownerName } from './OwnerField'
 
 export default function WrapUp({ ctx, remaining }: PhaseProps) {
   const { board, state, userId, isFacilitator, act } = ctx
@@ -14,6 +14,7 @@ export default function WrapUp({ ctx, remaining }: PhaseProps) {
   const now = useNow(10_000)
   const [text, setText] = useState('')
   const [newAction, setNewAction] = useState('')
+  const [owner, setOwner] = useState('')
   const all = cards(topics)
   const discussed = all.filter((t) => t.status === 'discussed').length
   const left = all.filter((t) => t.status === 'open').length
@@ -136,14 +137,20 @@ export default function WrapUp({ ctx, remaining }: PhaseProps) {
             </ul>
             {!ended && (
               <form
-                className="mt-2 flex gap-2"
+                className="mt-2 flex flex-wrap gap-2"
                 onSubmit={async (e) => {
                   e.preventDefault()
                   if (
                     newAction.trim() &&
-                    (await act('add_action', { p_board: state.board_id, p_text: newAction }))
-                  )
+                    (await act('add_action', {
+                      p_board: state.board_id,
+                      p_text: newAction,
+                      p_owner_name: ownerName(owner),
+                    }))
+                  ) {
                     setNewAction('')
+                    setOwner('')
+                  }
                 }}
               >
                 <input
@@ -152,7 +159,13 @@ export default function WrapUp({ ctx, remaining }: PhaseProps) {
                   maxLength={140}
                   onChange={(e) => setNewAction(e.target.value)}
                   placeholder="Add an action"
-                  className="h-11 min-w-0 flex-1 rounded-lg border-2 border-line bg-panel px-3 text-[15px]"
+                  className="h-11 min-w-0 grow basis-60 rounded-lg border-2 border-line bg-panel px-3 text-[15px]"
+                />
+                <OwnerField
+                  value={owner}
+                  onChange={setOwner}
+                  people={participants}
+                  className="h-11 rounded-lg"
                 />
                 <Button type="submit" variant="secondary">
                   Add action
@@ -164,7 +177,7 @@ export default function WrapUp({ ctx, remaining }: PhaseProps) {
       }
       side={
         <>
-          {!ended && state.phase_ends_at && (
+          {!ended && (state.phase_ends_at || state.paused_remaining_ms !== null) && (
             <ClockPanel
               title="Wrap-up clock"
               remaining={remaining}
@@ -173,6 +186,7 @@ export default function WrapUp({ ctx, remaining }: PhaseProps) {
               note="A soft clock. The session ends when the facilitator ends it."
             />
           )}
+          {isFacilitator && !ended && <TimerButtons ctx={ctx} />}
           <Downloads data={board.data} />
           {isFacilitator && !ended && (
             <div>
@@ -191,64 +205,5 @@ export default function WrapUp({ ctx, remaining }: PhaseProps) {
         </>
       }
     />
-  )
-}
-
-const FILES = [
-  {
-    kind: 'docx',
-    title: 'Word summary (.docx)',
-    detail: 'Topics discussed with votes, take-aways, and actions with owners',
-    label: 'Download Word file',
-  },
-  {
-    kind: 'xlsx',
-    title: 'Excel workbook (.xlsx)',
-    detail: 'Three sheets: Topics and votes, Actions, Take-aways',
-    label: 'Download Excel file',
-  },
-] as const
-
-function Downloads({ data }: { data: BoardData }) {
-  const [busy, setBusy] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  return (
-    <div>
-      <h2 className="text-[20px] font-bold">Download the results</h2>
-      <p className="mt-1 text-[14px] text-muted">
-        Files open in Word and Excel on Windows. Anyone in the session can download them.
-      </p>
-      <div className="mt-3 flex flex-col gap-3">
-        {FILES.map((f) => (
-          <div key={f.kind} className="rounded-xl border border-line-soft bg-panel p-4">
-            <p className="text-[16px] font-bold">{f.title}</p>
-            <p className="text-[14px] text-muted">{f.detail}</p>
-            <p className="mt-1 text-[13px] text-muted">{previewName(data, f.kind)}</p>
-            <Button
-              className="mt-3 w-full"
-              disabled={busy !== null}
-              onClick={async () => {
-                setBusy(f.kind)
-                setError(null)
-                try {
-                  await download(f.kind, data)
-                } catch {
-                  setError('Could not build the file. Try again.')
-                } finally {
-                  setBusy(null)
-                }
-              }}
-            >
-              {busy === f.kind ? 'Preparing…' : f.label}
-            </Button>
-          </div>
-        ))}
-      </div>
-      {error && (
-        <p role="alert" className="mt-2 text-[14px] font-bold text-danger">
-          {error}
-        </p>
-      )}
-    </div>
   )
 }

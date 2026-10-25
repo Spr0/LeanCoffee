@@ -8,6 +8,7 @@ import type { Topic } from '../../lib/types'
 import { useAtZero } from '../../state/useCountdown'
 import { useNow } from '../../state/useNow'
 import { Check, Eyebrow, Layout, PageTitle, TimerButtons, type PhaseProps } from './common'
+import Downloads from './Downloads'
 
 function omit(record: Record<string, number>, key: string): Record<string, number> {
   return Object.fromEntries(Object.entries(record).filter(([k]) => k !== key))
@@ -122,6 +123,7 @@ export default function Vote({ ctx, remaining }: PhaseProps) {
           <dd className="font-bold">{state.settings.own_vote ? 'On' : 'Off'}</dd>
         </dl>
       </div>
+      {revealed && <Downloads data={board.data} />}
     </>
   )
 
