@@ -30,7 +30,10 @@ test.describe('response headers (prompt 4.8)', () => {
         'form-action': ["'self'"],
         'object-src': ["'none'"],
       })
-      expect(h['strict-transport-security']).toBe('max-age=63072000; includeSubDomains')
+      // Netlify replaces HSTS on *.netlify.app with its own one-year preload value (decision D58).
+      const hsts = h['strict-transport-security'] ?? ''
+      expect(hsts).toContain('includeSubDomains')
+      expect(Number(/max-age=(\d+)/.exec(hsts)?.[1])).toBeGreaterThanOrEqual(31_536_000)
       expect(h['x-content-type-options']).toBe('nosniff')
       expect(h['referrer-policy']).toBe('no-referrer')
       expect(h['permissions-policy']).toContain('camera=()')

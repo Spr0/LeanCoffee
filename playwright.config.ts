@@ -16,6 +16,11 @@ export default defineConfig({
   use: {
     baseURL,
     trace: 'retain-on-failure',
+    // The request fixture runs in Node, which ignores HTTPS_PROXY; remote runs from a proxied
+    // container need it set explicitly.
+    ...(process.env.E2E_BASE_URL && process.env.HTTPS_PROXY
+      ? { proxy: { server: process.env.HTTPS_PROXY } }
+      : {}),
   },
   projects: [
     {
