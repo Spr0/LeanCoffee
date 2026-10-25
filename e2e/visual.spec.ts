@@ -1,3 +1,4 @@
+import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
 // Screenshots of every session screen for review against the mockups, plus the Stage view at
@@ -9,16 +10,36 @@ const SIZES = [
   [960, 900],
 ] as const
 
+/**
+ * Screenshots the screen at each size, then runs axe in light and dark (prompt 7.4). Dark mode is
+ * toggled with the header button, which stays reachable unless a modal dialog is open.
+ */
 async function shoot(
   page: Page,
   name: string,
   sizes: readonly (readonly [number, number])[] = [SIZES[0]],
+  themes = true,
 ) {
   for (const [w, h] of sizes) {
     await page.setViewportSize({ width: w, height: h })
     await page.screenshot({ path: `test-results/screens/${name}-${w}x${h}.png` })
   }
   await page.setViewportSize({ width: 1440, height: 900 })
+  const violations = async (theme: string) => {
+    const r = await new AxeBuilder({ page }).analyze()
+    return r.violations.map(
+      (v) => `${name} (${theme}): ${v.id} ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`,
+    )
+  }
+  const found = await violations('current theme')
+  if (themes) {
+    const before = await page.locator('html').getAttribute('data-theme')
+    await page.getByRole('button', { name: /Switch to (dark|light) mode/ }).click()
+    found.push(...(await violations(before === 'dark' ? 'light' : 'dark')))
+    await page.screenshot({ path: `test-results/screens/${name}-alt-theme-1440x900.png` })
+    await page.getByRole('button', { name: /Switch to (dark|light) mode/ }).click()
+  }
+  expect(found).toEqual([])
 }
 
 test('capture every session screen', async ({ browser }) => {
@@ -77,7 +98,7 @@ test('capture every session screen', async ({ browser }) => {
   await fac.getByRole('button', { name: 'Stage' }).click()
   await fac.getByRole('button', { name: 'Pass facilitator role' }).click()
   await fac.getByRole('radio', { name: 'Maya' }).check()
-  await shoot(fac, 'handover')
+  await shoot(fac, 'handover', undefined, false)
   await fac.getByRole('button', { name: 'Cancel' }).click()
   await fac.getByRole('button', { name: 'Next topic', exact: true }).click()
   await fac.getByRole('button', { name: 'Start wrap-up' }).first().click()

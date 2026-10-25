@@ -23,6 +23,7 @@ export default function BoardTab({
   ]
   return (
     <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <h1 className="sr-only">Board overview</h1>
       {columns.map((col) => (
         <section key={col.title} aria-label={col.title} className="rounded-2xl bg-surface p-3">
           <h2 className="flex justify-between px-1 text-[17px] font-bold">

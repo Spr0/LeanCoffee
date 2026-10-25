@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
+import { guard } from './guard.ts'
 
 // Gate 3: one facilitator and five participants run a full six-phase session with nine topics,
 // two extensions and a handover, while we check that hidden values never reach participants.
@@ -26,7 +27,12 @@ const axe = async (page: Page) =>
 
 test('six people run a whole session', async ({ browser }) => {
   const pages: Record<string, Page> = {}
-  for (const name of NAMES) pages[name] = await (await browser.newContext()).newPage()
+  const guards: ReturnType<typeof guard>[] = []
+  for (const name of NAMES) {
+    const page = await (await browser.newContext()).newPage()
+    guards.push(guard(page))
+    pages[name] = page
+  }
   const fran = at(pages, 'Fran')
   const others = NAMES.slice(1).map((n) => at(pages, n))
   const pat = at(pages, 'Pat')
@@ -211,4 +217,5 @@ test('six people run a whole session', async ({ browser }) => {
   // Downloads stay available after the session ends.
   await expect(pat.getByRole('button', { name: 'Download Word file' })).toBeEnabled()
   await expect(pat.getByRole('heading', { name: 'This session has ended' })).toBeVisible()
+  for (const g of guards) g.check()
 })

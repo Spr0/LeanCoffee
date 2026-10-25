@@ -114,6 +114,13 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: End-to-end (Playwright, axe, realtime isolation)
         run: npm run test:e2e
+      - name: Lighthouse accessibility (every session screen, light and dark)
+        run: |
+          npm install --no-save --prefix "$RUNNER_TEMP/lh" lighthouse@12.8.2
+          npm run build
+          npx vite preview --host 127.0.0.1 --port 4173 --strictPort &
+          npx wait-on -t 60000 http://127.0.0.1:4173 2>/dev/null || sleep 5
+          node scripts/lighthouse-a11y.mjs http://127.0.0.1:4173 "$RUNNER_TEMP/lh"
       - name: Upload screen captures for design review
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
