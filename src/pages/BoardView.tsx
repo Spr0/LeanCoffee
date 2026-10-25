@@ -32,13 +32,15 @@ export default function BoardView({
   boardId,
   userId,
   code,
+  notice,
 }: {
   boardId: string
   userId: string
   code: string
+  notice?: string | null
 }) {
   const board = useBoard(boardId)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(notice ?? null)
 
   const act = useCallback(async (fn: string, args: Record<string, unknown> = {}) => {
     setError(null)
@@ -114,6 +116,10 @@ export default function BoardView({
           </button>
         </div>
       )}
+      {/* Screen readers hear each phase change; the main content swaps silently otherwise. */}
+      <p className="sr-only" aria-live="polite">
+        {`Now in ${PHASE_LABEL[state.phase]}`}
+      </p>
       {state.phase === 'lobby' ? <Lobby ctx={ctx} /> : <SessionShell ctx={ctx} />}
     </div>
   )

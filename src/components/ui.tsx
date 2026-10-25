@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import { useId, type ButtonHTMLAttributes, type ReactNode } from 'react'
 
 type Variant = 'primary' | 'secondary' | 'ghost'
 
@@ -104,16 +104,13 @@ export function Stepper({
   step: number
   disabled?: boolean
 }) {
+  const id = useId()
   return (
     <div className="rounded-xl border border-line-soft bg-panel p-3.5">
-      <p className="mb-2 text-[13px] font-bold" id={`stepper-${label}`}>
+      <p className="mb-2 text-[13px] font-bold" id={id}>
         {label}
       </p>
-      <div
-        className="flex items-center justify-between"
-        role="group"
-        aria-labelledby={`stepper-${label}`}
-      >
+      <div className="flex items-center justify-between" role="group" aria-labelledby={id}>
         <button
           type="button"
           aria-label={`Decrease ${label}`}

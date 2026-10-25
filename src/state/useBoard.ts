@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { rpc, supabase } from '../lib/supabase'
 import { measureOffset } from '../lib/time'
 import type {
@@ -35,6 +35,7 @@ const KEYS: Record<Table, keyof BoardData> = {
   actions: 'actions',
   takeaways: 'takeaways',
 }
+const TABLES = Object.keys(KEYS) as Table[]
 
 const EMPTY: BoardData = {
   state: null,
@@ -56,7 +57,6 @@ export interface UseBoard {
   gone: boolean
   connection: Connection
   offsetMs: number
-  refresh: () => Promise<void>
 }
 
 const HEARTBEAT_MS = 20_000
@@ -66,6 +66,7 @@ const CLOCK_RESYNC_MS = 60_000
  * Loads a board and keeps it current. Row changes arrive through Postgres Changes on a private
  * channel; RLS decides what each member may receive. A board_state change can change what is
  * visible elsewhere (phase, reveal), so it triggers a full reload; other changes reload one table.
+ * Each load carries a sequence number so a slow, older response never overwrites a newer one.
  */
 export function useBoard(boardId: string): UseBoard {
   const [data, setData] = useState<BoardData>(EMPTY)
@@ -73,60 +74,96 @@ export function useBoard(boardId: string): UseBoard {
   const [gone, setGone] = useState(false)
   const [connection, setConnection] = useState<Connection>('connecting')
   const [offsetMs, setOffsetMs] = useState(0)
-  const alive = useRef(true)
 
-  const loadTable = useCallback(
-    async (table: Table) => {
-      const { data: rows, error } = await supabase.from(table).select('*').eq('board_id', boardId)
-      if (!error && alive.current) setData((d) => ({ ...d, [KEYS[table]]: rows ?? [] }))
+  const loaders = useCallback(
+    (isActive: () => boolean, onGone: () => void) => {
+      const latest = new Map<string, number>()
+      let seq = 0
+      const ticket = (key: string) => {
+        const n = ++seq
+        latest.set(key, n)
+        return () => isActive() && latest.get(key) === n
+      }
+
+      const loadTable = async (table: Table) => {
+        const current = ticket(table)
+        const { data: rows, error } = await supabase.from(table).select('*').eq('board_id', boardId)
+        if (!error && current()) setData((d) => ({ ...d, [KEYS[table]]: rows ?? [] }))
+      }
+
+      const refresh = async () => {
+        const current = ticket('board_state')
+        const { data: state, error } = await supabase
+          .from('board_state')
+          .select('*')
+          .eq('board_id', boardId)
+          .maybeSingle()
+        if (error || !current()) return
+        if (!state) return onGone()
+        setData((d) => ({ ...d, state: state as BoardState }))
+        await Promise.all(TABLES.map(loadTable))
+        if (isActive()) setLoaded(true)
+      }
+
+      const syncClock = async () => {
+        const sent = Date.now()
+        try {
+          const server = await rpc<string>('server_time')
+          if (isActive()) setOffsetMs(measureOffset(Date.parse(server), sent, Date.now()))
+        } catch {
+          // Keep the previous offset; the next resync will try again.
+        }
+      }
+
+      const beat = async () => {
+        try {
+          await rpc('heartbeat', { p_board: boardId })
+        } catch (e) {
+          if (e instanceof Error && 'code' in e && e.code === 'not_member') onGone()
+        }
+      }
+
+      return { loadTable, refresh, syncClock, beat }
     },
     [boardId],
   )
 
-  const refresh = useCallback(async () => {
-    const { data: state, error } = await supabase
-      .from('board_state')
-      .select('*')
-      .eq('board_id', boardId)
-      .maybeSingle()
-    if (!alive.current || error) return
-    if (!state) {
-      setGone(true)
-      return
-    }
-    setData((d) => ({ ...d, state: state as BoardState }))
-    await Promise.all((Object.keys(KEYS) as Table[]).map(loadTable))
-    if (alive.current) setLoaded(true)
-  }, [boardId, loadTable])
-
-  const syncClock = useCallback(async () => {
-    const sent = Date.now()
-    try {
-      const server = await rpc<string>('server_time')
-      if (alive.current) setOffsetMs(measureOffset(Date.parse(server), sent, Date.now()))
-    } catch {
-      // Keep the previous offset; the next resync will try again.
-    }
-  }, [])
-
   useEffect(() => {
-    alive.current = true
-    // Initial load from the database (an external system); state is set when the fetch resolves.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // Per-effect flag: under StrictMode the first run is torn down before its async work ends.
+    let active = true
+    let channel: ReturnType<typeof supabase.channel> | null = null
+    const timers: number[] = []
+
+    const stop = () => {
+      active = false
+      timers.forEach((t) => window.clearInterval(t))
+      if (channel) void supabase.removeChannel(channel)
+    }
+    const onGone = () => {
+      if (!active) return
+      stop()
+      setGone(true)
+    }
+    const { loadTable, refresh, syncClock, beat } = loaders(() => active, onGone)
+
     void refresh()
     void syncClock()
+    void beat()
+    timers.push(
+      window.setInterval(beat, HEARTBEAT_MS),
+      window.setInterval(syncClock, CLOCK_RESYNC_MS),
+    )
 
-    let channel: ReturnType<typeof supabase.channel> | null = null
     void (async () => {
       await supabase.realtime.setAuth()
-      if (!alive.current) return
+      if (!active) return
       channel = supabase.channel(`board:${boardId}`, { config: { private: true } })
       channel.on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'board_state', filter: `board_id=eq.${boardId}` },
         () => void refresh(),
       )
-      for (const table of Object.keys(KEYS) as Table[]) {
+      for (const table of TABLES) {
         channel.on(
           'postgres_changes',
           { event: '*', schema: 'public', table, filter: `board_id=eq.${boardId}` },
@@ -134,7 +171,7 @@ export function useBoard(boardId: string): UseBoard {
         )
       }
       channel.subscribe((status) => {
-        if (!alive.current) return
+        if (!active) return
         if (status === 'SUBSCRIBED') {
           setConnection('live')
           // Anything missed while disconnected is reloaded.
@@ -146,39 +183,32 @@ export function useBoard(boardId: string): UseBoard {
       })
     })()
 
-    const beat = async () => {
-      try {
-        await rpc('heartbeat', { p_board: boardId })
-      } catch (e) {
-        if (e instanceof Error && 'code' in e && e.code === 'not_member') setGone(true)
-      }
-    }
-    void beat()
-    const heartbeat = window.setInterval(beat, HEARTBEAT_MS)
-    const clock = window.setInterval(syncClock, CLOCK_RESYNC_MS)
-
     const onVisible = () => {
-      if (document.visibilityState === 'visible') {
-        void beat()
-        void refresh()
-        void syncClock()
-      }
+      if (document.visibilityState !== 'visible' || !active) return
+      void beat()
+      void refresh()
+      void syncClock()
     }
-    const onOffline = () => setConnection('reconnecting')
+    const onOnline = () => {
+      if (!active) return
+      // The socket may have survived a brief offline blip without a status change.
+      if (channel?.state === 'joined') setConnection('live')
+      onVisible()
+    }
+    const onOffline = () => {
+      if (active) setConnection('reconnecting')
+    }
     document.addEventListener('visibilitychange', onVisible)
-    window.addEventListener('online', onVisible)
+    window.addEventListener('online', onOnline)
     window.addEventListener('offline', onOffline)
 
     return () => {
-      alive.current = false
-      window.clearInterval(heartbeat)
-      window.clearInterval(clock)
+      stop()
       document.removeEventListener('visibilitychange', onVisible)
-      window.removeEventListener('online', onVisible)
+      window.removeEventListener('online', onOnline)
       window.removeEventListener('offline', onOffline)
-      if (channel) void supabase.removeChannel(channel)
     }
-  }, [boardId, refresh, loadTable, syncClock])
+  }, [boardId, loaders])
 
-  return { data, loaded, gone, connection, offsetMs, refresh }
+  return { data, loaded, gone, connection, offsetMs }
 }

@@ -9,13 +9,21 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
 })
 
+let pendingSession: Promise<string> | null = null
+
 /** Every browser gets an anonymous Supabase identity; it persists across reloads. */
-export async function ensureSession(): Promise<string> {
-  const { data } = await supabase.auth.getSession()
-  if (data.session) return data.session.user.id
-  const { data: signed, error } = await supabase.auth.signInAnonymously()
-  if (error || !signed.user) throw new AppError('sign_in_failed')
-  return signed.user.id
+export function ensureSession(): Promise<string> {
+  // Share one in-flight sign-in so concurrent callers never create two identities.
+  pendingSession ??= (async () => {
+    const { data } = await supabase.auth.getSession()
+    if (data.session) return data.session.user.id
+    const { data: signed, error } = await supabase.auth.signInAnonymously()
+    if (error || !signed.user) throw new AppError('sign_in_failed')
+    return signed.user.id
+  })().finally(() => {
+    pendingSession = null
+  })
+  return pendingSession
 }
 
 const MESSAGES: Record<string, string> = {

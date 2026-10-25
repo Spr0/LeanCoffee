@@ -27,13 +27,12 @@ export default function SessionShell({ ctx }: { ctx: BoardContext }) {
             </li>
           ))}
         </ol>
-        <div role="tablist" aria-label="View" className="flex rounded-xl border-2 border-line p-1">
+        <div role="group" aria-label="View" className="flex rounded-xl border-2 border-line p-1">
           {(['stage', 'board'] as const).map((v) => (
             <button
               key={v}
-              role="tab"
               type="button"
-              aria-selected={view === v}
+              aria-pressed={view === v}
               onClick={() => setView(v)}
               className={`min-h-11 rounded-lg px-4 text-[15px] font-bold ${view === v ? 'bg-teal-soft text-teal' : ''}`}
             >

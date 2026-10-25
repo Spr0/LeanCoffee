@@ -13,7 +13,7 @@ type Step =
   | { kind: 'missing' }
   | { kind: 'error'; message: string }
   | { kind: 'join'; info: BoardInfo }
-  | { kind: 'board'; boardId: string; userId: string }
+  | { kind: 'board'; boardId: string; userId: string; notice: string | null }
 
 interface JoinResult {
   ok: boolean
@@ -28,14 +28,21 @@ export default function BoardRoute({ code }: { code: string }) {
 
   const enter = useCallback(
     async (boardId: string, userId: string) => {
+      let notice: string | null = null
       if (recoveryToken) {
         try {
-          await rpc('reclaim_facilitator', { p_board: boardId, p_token: recoveryToken })
-        } catch {
-          // A bad or expired token leaves the role as it was; the board still opens.
+          const ok = await rpc<boolean>('reclaim_facilitator', {
+            p_board: boardId,
+            p_token: recoveryToken,
+          })
+          notice = ok
+            ? 'You are the facilitator again.'
+            : 'That recovery link did not work. The facilitator is unchanged.'
+        } catch (e) {
+          notice = e instanceof AppError ? e.message : 'That recovery link did not work.'
         }
       }
-      setStep({ kind: 'board', boardId, userId })
+      setStep({ kind: 'board', boardId, userId, notice })
     },
     [recoveryToken],
   )
@@ -53,7 +60,9 @@ export default function BoardRoute({ code }: { code: string }) {
             p_code: code,
             p_display_name: 'unused',
           })
-          if (!cancelled && res.ok && res.board_id) await enter(res.board_id, userId)
+          if (cancelled) return
+          if (res.ok && res.board_id) await enter(res.board_id, userId)
+          else setStep({ kind: 'error', message: new AppError(res.error ?? 'network').message })
           return
         }
         setStep({ kind: 'join', info })
@@ -71,7 +80,14 @@ export default function BoardRoute({ code }: { code: string }) {
   }, [code, enter])
 
   if (step.kind === 'board')
-    return <BoardView boardId={step.boardId} userId={step.userId} code={formatCode(code)} />
+    return (
+      <BoardView
+        boardId={step.boardId}
+        userId={step.userId}
+        code={formatCode(code)}
+        notice={step.notice}
+      />
+    )
   if (step.kind === 'join')
     return (
       <Join

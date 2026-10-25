@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Avatar, Button, Eyebrow, Stepper, Switch } from '../components/ui'
 import { readRecoveryToken, recoveryLink } from '../lib/recovery'
 import { formatClock, isPresent } from '../lib/time'
@@ -36,6 +36,16 @@ export default function Lobby({ ctx }: { ctx: BoardContext }) {
   const [passcodeDraft, setPasscodeDraft] = useState('')
   const [passcodeOpen, setPasscodeOpen] = useState(false)
   const [copied, copy] = useCopy()
+  const nameInput = useRef<HTMLInputElement>(null)
+  const renameButton = useRef<HTMLButtonElement>(null)
+  const wasEditing = useRef(false)
+
+  // Move focus into the rename field when it opens, and back to the pencil when it closes.
+  useEffect(() => {
+    if (editingName) nameInput.current?.focus()
+    else if (wasEditing.current) renameButton.current?.focus()
+    wasEditing.current = editingName
+  }, [editingName])
 
   const now = useNow(5000)
   const here = board.data.participants
@@ -62,13 +72,20 @@ export default function Lobby({ ctx }: { ctx: BoardContext }) {
               }}
             >
               <input
+                ref={nameInput}
                 aria-label="Board name"
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setEditingName(false)
+                }}
                 className="h-12 flex-1 rounded-xl border-2 border-line bg-panel px-3 text-[22px] font-bold"
                 value={nameDraft}
                 maxLength={60}
                 onChange={(e) => setNameDraft(e.target.value)}
               />
               <Button type="submit">Save</Button>
+              <Button variant="ghost" onClick={() => setEditingName(false)}>
+                Cancel
+              </Button>
             </form>
           ) : (
             <>
@@ -78,6 +95,7 @@ export default function Lobby({ ctx }: { ctx: BoardContext }) {
               {isFacilitator && (
                 <button
                   type="button"
+                  ref={renameButton}
                   aria-label="Rename board"
                   className="flex size-11 items-center justify-center rounded-lg text-muted"
                   onClick={() => {
