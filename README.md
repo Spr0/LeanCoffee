@@ -6,6 +6,8 @@ A free, realtime Lean Coffee meeting app for small teams (3 to 12 people) on a T
 - Build brief: [`docs/handoff/`](docs/handoff/) (build prompt, functional spec, mockups, addendum)
 - Decisions log: [`docs/decisions.md`](docs/decisions.md)
 - Security: [`SECURITY.md`](SECURITY.md)
+- Handoff report: [`docs/handoff-report.md`](docs/handoff-report.md) (gates, deviations, what was not tested, risks)
+- Handoff report: [`docs/handoff-report.md`](docs/handoff-report.md) (gates, deviations, what was not tested, risks)
 
 ## Status
 
