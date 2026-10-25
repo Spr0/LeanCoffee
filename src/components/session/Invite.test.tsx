@@ -19,7 +19,7 @@ describe('inviteMessage', () => {
 describe('InviteButton', () => {
   it('opens a dialog with the code and both copy buttons', () => {
     render(<InviteButton ctx={makeCtx({ state: { phase: 'brainstorm' } })} />)
-    fireEvent.click(screen.getByRole('button', { name: /Invite people, room code/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Invite people' }))
     const dialog = screen.getByRole('dialog', { name: 'Invite people' })
     expect(within(dialog).getByRole('button', { name: 'Copy link' })).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Copy invite message' })).toBeInTheDocument()
@@ -28,7 +28,7 @@ describe('InviteButton', () => {
 
   it('warns when the board is locked', () => {
     render(<InviteButton ctx={makeCtx({ state: { phase: 'discuss', locked: true } })} />)
-    fireEvent.click(screen.getByRole('button', { name: /Invite people/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Invite people' }))
     expect(screen.getByText(/The board is locked/)).toBeInTheDocument()
   })
 })

@@ -37,15 +37,18 @@ export function InviteButton({ ctx }: { ctx: BoardContext }) {
   const link = inviteLink(code)
   return (
     <>
+      <span className="rounded-md bg-surface px-2 py-1 text-[13px] font-extrabold tracking-[0.08em] text-ink">
+        <span className="sr-only">Room code: </span>
+        {code}
+      </span>
+      {/* The name starts with the visible word (WCAG 2.5.3). */}
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex min-h-11 items-center gap-2 rounded-lg border-2 border-line px-2.5 text-[13px] font-bold text-ink hover:bg-surface"
+        aria-label="Invite people"
+        className="min-h-11 rounded-lg border-2 border-line px-3 text-[13px] font-bold text-teal hover:bg-surface"
       >
-        {/* The accessible name starts with the visible text (WCAG 2.5.3). */}
-        <span className="text-teal">Invite</span>
-        <span className="sr-only"> people, room code </span>
-        <span className="tracking-[0.08em]">{code}</span>
+        Invite
       </button>
       <Dialog open={open} onClose={() => setOpen(false)} title="Invite people">
         <p className="mt-2 text-[15px] text-muted">

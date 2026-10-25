@@ -22,7 +22,8 @@
   --color-danger: var(--danger);
 }
 
-/* Design tokens from the brief. Dark values derived so every text pair meets WCAG AA. */
+/* Design tokens. Accent is "pine", a brand-adjacent green (the --teal names are kept so no class
+   changes). Every text pair meets WCAG AA 4.5:1 and every boundary 3:1, in both themes. */
 :root {
   --ground: #ffffff;
   --surface: #f3f5f4;
@@ -31,9 +32,9 @@
   --muted: #55625f;
   --line: #d5dddb;
   --line-soft: #e1e7e5;
-  --line-strong: #8a9894;
-  --teal: #0f766e;
-  --teal-soft: #d9f0ec;
+  --line-strong: #7d8b87;
+  --teal: #24624a;
+  --teal-soft: #dcefe4;
   --on-teal: #ffffff;
   --urgent: #c2410c;
   --danger: #b91c1c;
@@ -41,17 +42,17 @@
 }
 
 [data-theme='dark'] {
-  --ground: #12151b;
-  --surface: #1a1f28;
-  --panel: #1a1f28;
-  --ink: #eef0f4;
-  --muted: #a4adbb;
-  --line: #2b3340;
-  --line-soft: #232a35;
-  --line-strong: #5b6678;
-  --teal: #2dd4bf;
-  --teal-soft: #143a36;
-  --on-teal: #05201d;
+  --ground: #121614;
+  --surface: #1a1f1c;
+  --panel: #1a1f1c;
+  --ink: #eef1ef;
+  --muted: #a6b0aa;
+  --line: #2b332f;
+  --line-soft: #232a26;
+  --line-strong: #68756e;
+  --teal: #6fcf9f;
+  --teal-soft: #163a2c;
+  --on-teal: #062016;
   --urgent: #f5b544;
   --danger: #ff8a7a;
   color-scheme: dark;

@@ -136,6 +136,16 @@ function sample(): BoardData {
         done: false,
         created_at: '1',
       },
+      {
+        id: 'a2',
+        board_id: 'b',
+        topic_id: null,
+        text: 'Share the onboarding doc',
+        owner_name: 'Ana',
+        created_by: 'x',
+        done: true,
+        created_at: '2',
+      },
     ],
     takeaways: [
       {
@@ -202,9 +212,34 @@ describe('Excel workbook', () => {
     expect((time as Date).toISOString()).toBe('1899-12-30T00:08:00.000Z')
     expect(topics.getColumn(6).numFmt).toBe('mm:ss')
     expect(wb.getWorksheet('Actions')?.getRow(2).getCell(2).value).toBe("'+1 for buddy system")
+    expect(wb.getWorksheet('Actions')?.getRow(1).getCell(5).value).toBe('Done')
+    expect(wb.getWorksheet('Actions')?.getRow(2).getCell(5).value).toBe('No')
+    expect(wb.getWorksheet('Actions')?.getRow(3).getCell(5).value).toBe('Yes')
     expect(wb.getWorksheet('Take-aways')?.getRow(2).getCell(2).value).toBe(
       "'@everyone read the doc",
     )
+    // Accent header row, banded body, print setup on every sheet.
+    for (const ws of wb.worksheets) {
+      const head = ws.getRow(1).getCell(1)
+      expect(head.fill).toMatchObject({
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF24624A' },
+      })
+      expect(head.font?.color?.argb).toBe('FFFFFFFF')
+      expect(head.font?.bold).toBe(true)
+      expect(ws.pageSetup).toMatchObject({
+        orientation: 'landscape',
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        printTitlesRow: '1:1',
+      })
+    }
+    expect(topics.getRow(3).getCell(1).fill).toMatchObject({ fgColor: { argb: 'FFEEF6F1' } })
+    expect(
+      (topics.getRow(2).getCell(1).fill as ExcelJS.FillPattern | undefined)?.pattern ?? 'none',
+    ).toBe('none')
     // No formulas anywhere.
     for (const ws of wb.worksheets)
       ws.eachRow((row) => row.eachCell((c) => expect(c.type).not.toBe(ExcelJS.ValueType.Formula)))
@@ -220,6 +255,16 @@ describe('Word document', () => {
     expect(xml).toContain('w:val="Heading1"')
     expect(xml).toContain('w:val="Title"')
     expect(xml).toContain('<w:tblHeader')
+    expect(xml).toContain('w:fill="24624A"') // accent header row
+    expect(xml).toContain('w:fill="EEF6F1"') // banded second action row
+    expect(xml).toContain('\u2713') // done action is checked
+    expect(xml).toContain('SESSION LENGTH') // key-facts box
+    const footer = Object.keys(zip.files).find((f) => /^word\/footer\d*\.xml$/.test(f)) ?? ''
+    const footerXml = (await zip.file(footer)?.async('string')) ?? ''
+    expect(footerXml).toContain('PAGE')
+    expect(footerXml).toContain('NUMPAGES')
+    const styles = (await zip.file('word/styles.xml')?.async('string')) ?? ''
+    expect(styles).toContain('w:color w:val="24624A"') // headings in the accent
     expect(xml).toContain('&lt;img src=x onerror=alert(1)&gt;')
     expect(xml).not.toContain(XSS)
     expect(xml).toContain('w:w="12240"') // US Letter width

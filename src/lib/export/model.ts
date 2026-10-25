@@ -19,7 +19,7 @@ export interface ExportModel {
   discussed: ExportTopic[]
   notDiscussed: ExportTopic[]
   all: ExportTopic[]
-  actions: { text: string; owner: string; topic: string }[]
+  actions: { text: string; owner: string; topic: string; done: boolean }[]
   takeaways: { name: string; text: string }[]
 }
 
@@ -74,6 +74,7 @@ export function buildModel(data: BoardData, now: Date): ExportModel {
         text: a.text,
         owner: a.owner_name ?? '',
         topic: a.topic_id ? (topicText.get(a.topic_id) ?? '') : '',
+        done: a.done,
       })),
     takeaways: data.takeaways
       .filter((t) => !t.passed && t.text)
