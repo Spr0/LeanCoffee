@@ -42,6 +42,9 @@ create table public.board_state (
   current_topic_id uuid,
   pitch_topic_id uuid,
   vote_round int not null default 0 check (vote_round >= 0),
+  -- Round where the current ranking starts: 0, or the round a re-vote opened. Later rounds
+  -- up to vote_round are tie-break rounds among tie_topic_ids.
+  base_round int not null default 0 check (base_round between 0 and vote_round),
   tie_topic_ids uuid[] not null default '{}',
   votes_revealed_at timestamptz,
   topic_count int not null default 0 check (topic_count >= 0),
@@ -163,10 +166,12 @@ create table public.takeaways (
 create table public.failed_attempts (
   id bigint generated always as identity primary key,
   user_id uuid not null,
+  board_id uuid references public.boards (id) on delete cascade,
   at timestamptz not null default now()
 );
 create index failed_attempts_user_idx on public.failed_attempts (user_id, at);
 create index failed_attempts_at_idx on public.failed_attempts (at);
+create index failed_attempts_board_idx on public.failed_attempts (board_id, at);
 
 -- ---------------------------------------------------------------------------------------
 -- Dot budget enforced as a constraint as well as in cast_dots().
@@ -179,7 +184,7 @@ declare
   v_budget int;
   v_used int;
 begin
-  select case when new.round = 0 then (s.settings ->> 'dots')::int else 1 end
+  select case when new.round = s.base_round then (s.settings ->> 'dots')::int else 1 end
     into v_budget
     from public.board_state s
    where s.board_id = new.board_id;

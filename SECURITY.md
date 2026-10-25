@@ -18,6 +18,8 @@ Contact the owner directly. Do not open a public issue for a vulnerability.
   - No CAPTCHA on anonymous sign-ins (Turnstile declined); relies on the Supabase per-IP limit.
   - One Supabase project, no staging database; migrations are proven in CI first.
   - The Supabase Email provider is enabled but unused by the app.
+  - Removal blocks the removed person's identity, but anyone with the link can sign in again with a new anonymous identity and rejoin until the board is locked. Lock the board after removing someone.
+  - The board owner cannot be removed, so the recovery link always works.
 
 ## Controls already in place (Phase 0)
 

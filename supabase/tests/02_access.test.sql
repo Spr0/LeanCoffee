@@ -1,6 +1,6 @@
 -- Board creation, lookup, joining, caps, passcodes, throttling, and direct-read denial.
 begin;
-select plan(24);
+select plan(26);
 
 -- Facilitator (u1) creates a board.
 select tests.login(tests.u(1));
@@ -80,6 +80,22 @@ select public.lookup_board('2222222' || n) from generate_series(2, 6) n;
 select is(public.lookup_board(current_setting('t.code')), null, 'throttled lookup of a valid code returns null like a missing board');
 select is(public.join_board(current_setting('t.code'), 'Mallory'), public.join_board('ZZZZZZZZ', 'Mallory'),
   'throttled join is indistinguishable from an unknown code');
+
+-- The global ceiling does not lock out callers who are not failing themselves.
+select tests.as_admin();
+insert into public.failed_attempts (user_id) select tests.u(60) from generate_series(1, 300);
+select tests.login(tests.u(61));
+select is(public.lookup_board(current_setting('t.code')) ->> 'name', 'Team sync',
+  'a flood of failures by others does not block a legitimate lookup');
+
+-- Passcode guessing spread across identities stops after 20 failures per board per hour.
+select tests.as_admin();
+insert into public.failed_attempts (user_id, board_id)
+select tests.u(70 + n), (select id from public.boards where code = current_setting('t.code3'))
+  from generate_series(1, 20) n;
+select tests.login(tests.u(3));
+select is(public.join_board(current_setting('t.code3'), 'Quinn', 'open-sesame') ->> 'error', 'passcode_incorrect',
+  'per-board cap refuses even the right passcode during a guessing attack');
 
 -- Signed-out visitors cannot use the API at all.
 select tests.signed_out();

@@ -5,7 +5,8 @@ alter publication supabase_realtime add table
   public.board_state, public.participants, public.topics, public.votes,
   public.extend_rounds, public.extend_votes, public.actions, public.takeaways;
 
--- Private Broadcast/Presence channels: only members may use topic 'board:<uuid>'.
+-- Private Broadcast channels: only members may receive on topic 'board:<uuid>'. No send
+-- policy: clients never publish. State, authority and counts come only from Postgres Changes.
 create function private.is_member_topic(p_topic text) returns boolean
 language plpgsql stable security definer
 set search_path = ''
@@ -22,8 +23,6 @@ grant execute on function private.is_member_topic(text) to authenticated;
 
 create policy board_members_receive on realtime.messages
   for select to authenticated using ((select private.is_member_topic(realtime.topic())));
-create policy board_members_send on realtime.messages
-  for insert to authenticated with check ((select private.is_member_topic(realtime.topic())));
 
 -- Deletes boards 7 days after they end (or after last activity), their children by cascade,
 -- stale throttle rows, and anonymous users older than 14 days with no live membership.

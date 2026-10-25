@@ -62,10 +62,10 @@ select is(
 );
 
 select is(
-  (select count(*) from pg_policies where schemaname = 'realtime' and tablename = 'messages'
-     and policyname in ('board_members_receive', 'board_members_send')),
-  2::bigint,
-  'realtime.messages is restricted to board members'
+  (select array_agg(cmd || ':' || policyname) from pg_policies
+    where schemaname = 'realtime' and tablename = 'messages'),
+  array['SELECT:board_members_receive'],
+  'realtime.messages: members may receive, nobody may send'
 );
 
 select * from finish();

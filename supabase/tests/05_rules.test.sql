@@ -1,6 +1,6 @@
 -- Session rules: caps, lengths, dot budget, own-topic rule, phase gates, extend rule, timers.
 begin;
-select plan(22);
+select plan(26);
 
 select tests.login(tests.u(1));
 select set_config('t.created', public.create_board('Fran')::text, true);
@@ -114,6 +114,22 @@ select ok((select phase_ends_at is not null and paused_remaining_ms is null from
 select public.next_topic(current_setting('t.board')::uuid);
 select is((select count(*) from public.topics where status = 'discussed' and discussed_seq = 1), 1::bigint,
   'next topic marks the current topic discussed in order');
+
+-- Settings updates keep the board name unless a new one is given.
+select public.update_settings(current_setting('t.board')::uuid, '{"extend_s": 120}');
+select is((select name from public.board_state), '', 'settings update leaves the name alone');
+select public.update_settings(current_setting('t.board')::uuid, '{}', 'Retro');
+select is((select name from public.board_state), 'Retro', 'name can be changed');
+
+-- Re-vote restores a full dot budget even when dots sat on discussed topics.
+select public.revote(current_setting('t.board')::uuid);
+-- u3 still has 2 dots from round 0 on an open topic; the new round must not count them.
+select tests.login(tests.u(3));
+select lives_ok(format('select public.cast_dots((select id from public.topics where text = %L), 3)', 'Pat 2'),
+  'after a re-vote, voters have their full dot budget again');
+select tests.login(tests.u(2));
+select is((select count(*) from public.votes where round = 0), 2::bigint,
+  'earlier rounds stay visible while the re-vote is hidden');
 
 select * from finish();
 rollback;

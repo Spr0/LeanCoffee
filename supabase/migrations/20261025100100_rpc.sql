@@ -6,8 +6,10 @@
 -- Internal helpers (private schema, not callable by clients)
 -- ---------------------------------------------------------------------------------------
 
+-- Volatile on purpose: the planner pre-evaluates stable calls during estimation, which would
+-- raise outside a request.
 create function private.uid() returns uuid
-language plpgsql stable
+language plpgsql volatile
 set search_path = ''
 as $$
 declare
@@ -27,9 +29,10 @@ set search_path = ''
 as $$
 declare
   s public.board_state;
+  v_uid uuid := private.uid();
 begin
   if not exists (
-    select 1 from public.participants p where p.board_id = p_board and p.user_id = private.uid()
+    select 1 from public.participants p where p.board_id = p_board and p.user_id = v_uid
   ) then
     raise exception 'not_member';
   end if;
@@ -92,11 +95,11 @@ as $$
   select upper(regexp_replace(coalesce(p, ''), '[^0-9A-Za-z]', '', 'g'));
 $$;
 
-create function private.record_failure() returns void
+create function private.record_failure(p_board uuid default null) returns void
 language sql
 set search_path = ''
 as $$
-  insert into public.failed_attempts (user_id) values (auth.uid());
+  insert into public.failed_attempts (user_id, board_id) values (auth.uid(), p_board);
 $$;
 
 -- Exponential per-user lockout after 5 failures in 15 minutes, plus a global ceiling.
@@ -114,7 +117,10 @@ begin
   if n >= 5 and now() < v_last + least(60, power(2, n - 5)) * interval '1 minute' then
     return true;
   end if;
-  return (select count(*) from public.failed_attempts where at > now() - interval '1 minute') >= 300;
+  -- Global ceiling, applied only to callers who are failing themselves, so a flood of bad
+  -- lookups cannot lock out legitimate joiners.
+  return n > 0
+     and (select count(*) from public.failed_attempts where at > now() - interval '1 minute') >= 300;
 end;
 $$;
 
@@ -150,10 +156,11 @@ begin
   -- Rank: main-round dots, then tie-round dots, then existing order.
   with totals as (
     select t.id,
-           coalesce(sum(v.dots) filter (where v.round = 0), 0) as main,
-           coalesce(sum(v.dots) filter (where v.round > 0), 0) as tie,
+           coalesce(sum(v.dots) filter (where v.round = s.base_round), 0) as main,
+           coalesce(sum(v.dots) filter (where v.round > s.base_round), 0) as tie,
            t.sort_order
       from public.topics t
+      join public.board_state s on s.board_id = t.board_id
       left join public.votes v on v.topic_id = t.id
      where t.board_id = p_board and t.merged_into is null and t.status = 'open'
      group by t.id
@@ -268,7 +275,7 @@ begin
        where owner_user_id = v_uid and created_at > now() - interval '1 day') >= 10 then
     raise exception 'rate_limited';
   end if;
-  if p_passcode is not null and char_length(p_passcode) not between 4 and 64 then
+  if p_passcode is not null and char_length(p_passcode) not between 6 and 64 then
     raise exception 'invalid_passcode';
   end if;
 
@@ -360,10 +367,15 @@ begin
   if v_uid = any (b.removed_user_ids) then
     return jsonb_build_object('ok', false, 'error', 'removed');
   end if;
-  if b.passcode_hash is not null
-     and (p_passcode is null or extensions.crypt(p_passcode, b.passcode_hash) <> b.passcode_hash) then
-    perform private.record_failure();
-    return jsonb_build_object('ok', false, 'error', 'passcode_incorrect');
+  if b.passcode_hash is not null then
+    -- Per-board cap stops guessing spread across many fresh anonymous identities.
+    if (select count(*) from public.failed_attempts
+         where board_id = b.id and at > now() - interval '1 hour') >= 20
+       or p_passcode is null
+       or extensions.crypt(p_passcode, b.passcode_hash) <> b.passcode_hash then
+      perform private.record_failure(b.id);
+      return jsonb_build_object('ok', false, 'error', 'passcode_incorrect');
+    end if;
   end if;
   if s.phase = 'ended' then
     return jsonb_build_object('ok', false, 'error', 'session_ended');
@@ -399,9 +411,11 @@ set search_path = ''
 as $$
 declare
   s public.board_state;
+  v_uid uuid;
 begin
+  v_uid := private.uid();
   update public.participants set last_seen_at = now()
-   where board_id = p_board and user_id = private.uid();
+   where board_id = p_board and user_id = v_uid;
   if not found then
     raise exception 'not_member';
   end if;
@@ -470,7 +484,7 @@ begin
 
   update public.board_state
      set settings = settings || coalesce(p_settings, '{}'),
-         name = coalesce(private.clean_text(p_name), name),
+         name = case when p_name is null then name else private.clean_text(p_name) end,
          planned_minutes = coalesce(p_planned_minutes, planned_minutes)
    where board_id = p_board;
   perform private.touch(p_board);
@@ -483,7 +497,7 @@ set search_path = ''
 as $$
 begin
   perform private.facilitator_state(p_board);
-  if nullif(p_passcode, '') is not null and char_length(p_passcode) not between 4 and 64 then
+  if nullif(p_passcode, '') is not null and char_length(p_passcode) not between 6 and 64 then
     raise exception 'invalid_passcode';
   end if;
   update public.boards
@@ -522,6 +536,9 @@ begin
   perform private.facilitator_state(p_board);
   if p_user = private.uid() then
     raise exception 'cannot_remove_self';
+  end if;
+  if p_user = (select owner_user_id from public.board_state where board_id = p_board) then
+    raise exception 'cannot_remove_owner';
   end if;
   delete from public.participants where board_id = p_board and user_id = p_user;
   if not found then
@@ -574,7 +591,7 @@ begin
       v_raw := null;
     end;
     if v_raw is null or extensions.digest(v_raw, 'sha256') <> v_hash then
-      perform private.record_failure();
+      perform private.record_failure(p_board);
       -- Return instead of raising so the failure record commits.
       return false;
     end if;
@@ -611,7 +628,7 @@ begin
     update public.extend_rounds set closed_at = now(), result = 'move_on'
      where board_id = p_board and closed_at is null;
   end if;
-  if s.phase = 'vote' then
+  if s.phase = 'vote' and s.votes_revealed_at is null then
     perform private.do_reveal(p_board);
   end if;
 
@@ -628,6 +645,7 @@ begin
          started_at = case when p_phase = 'brainstorm' then coalesce(started_at, now()) else started_at end,
          ended_at = case when p_phase = 'ended' then now() else ended_at end,
          vote_round = case when p_phase = 'vote' then 0 else vote_round end,
+         base_round = case when p_phase = 'vote' then 0 else base_round end,
          tie_topic_ids = '{}',
          votes_revealed_at = case when p_phase = 'vote' then null else votes_revealed_at end
    where board_id = p_board;
@@ -813,7 +831,9 @@ begin
     raise exception 'topic_in_progress';
   end if;
   delete from public.topics where id = p_topic;
-  update public.board_state set topic_count = greatest(0, topic_count - 1) where board_id = t.board_id;
+  if found then
+    update public.board_state set topic_count = greatest(0, topic_count - 1) where board_id = t.board_id;
+  end if;
   perform private.touch(t.board_id);
 end;
 $$;
@@ -836,6 +856,10 @@ begin
   s := private.facilitator_state(src.board_id);
   if s.phase <> 'clarify' then
     raise exception 'wrong_phase';
+  end if;
+  -- Re-check under the board lock.
+  if (select merged_into from public.topics where id = p_target) is not null then
+    raise exception 'topic_unavailable';
   end if;
   update public.topics set merged_into = p_target where merged_into = p_source;
   update public.topics set merged_into = p_target where id = p_source;
@@ -904,7 +928,7 @@ begin
     raise exception 'voting_closed';
   end if;
   if t.merged_into is not null or t.status <> 'open'
-     or (s.vote_round > 0 and not (p_topic = any (s.tie_topic_ids))) then
+     or (s.vote_round > s.base_round and not (p_topic = any (s.tie_topic_ids))) then
     raise exception 'topic_unavailable';
   end if;
   if t.author_user_id = v_uid and not (s.settings ->> 'own_vote')::boolean and p_dots > 0 then
@@ -926,12 +950,13 @@ set search_path = ''
 as $$
 declare
   s public.board_state := private.member_state(p_board);
+  v_uid uuid := private.uid();
 begin
   if s.phase <> 'vote' or s.votes_revealed_at is not null then
     raise exception 'voting_closed';
   end if;
   update public.participants set finished_voting = p_done, last_seen_at = now()
-   where board_id = p_board and user_id = private.uid();
+   where board_id = p_board and user_id = v_uid;
   if private.all_finished(p_board) then
     perform private.do_reveal(p_board);
     return true;
@@ -1010,8 +1035,8 @@ begin
     raise exception 'wrong_phase';
   end if;
   with totals as (
-    select t.id, coalesce(sum(v.dots) filter (where v.round = 0), 0) as main,
-           coalesce(sum(v.dots) filter (where v.round > 0), 0) as tie
+    select t.id, coalesce(sum(v.dots) filter (where v.round = s.base_round), 0) as main,
+           coalesce(sum(v.dots) filter (where v.round > s.base_round), 0) as tie
       from public.topics t left join public.votes v on v.topic_id = t.id
      where t.board_id = p_board and t.merged_into is null and t.status = 'open'
      group by t.id
@@ -1022,7 +1047,7 @@ begin
 end;
 $$;
 
--- Clears dots on undiscussed topics and reopens Vote for one minute.
+-- Reopens Vote for one minute in a fresh round with a full dot budget (spec F21).
 create function public.revote(p_board uuid) returns void
 language plpgsql security definer
 set search_path = ''
@@ -1033,10 +1058,10 @@ begin
   if s.phase <> 'discuss' or s.current_topic_id is not null then
     raise exception 'wrong_phase';
   end if;
-  delete from public.votes v using public.topics t
-   where v.topic_id = t.id and t.board_id = p_board and t.status = 'open';
+  -- A fresh round with a full dot budget; earlier rounds stay as visible history.
   update public.board_state
-     set phase = 'vote', vote_round = 0, tie_topic_ids = '{}', votes_revealed_at = null,
+     set phase = 'vote', vote_round = vote_round + 1, base_round = vote_round + 1,
+         tie_topic_ids = '{}', votes_revealed_at = null,
          phase_ends_at = now() + interval '60 seconds', paused_remaining_ms = null
    where board_id = p_board;
   update public.participants set finished_voting = false where board_id = p_board;
@@ -1131,6 +1156,7 @@ begin
     raise exception 'round_unavailable';
   end if;
   perform private.member_state(r.board_id);
+  select * into r from public.extend_rounds where id = p_round;  -- re-read under the board lock
   if r.closed_at is not null or now() >= r.closes_at then
     raise exception 'round_closed';
   end if;
@@ -1338,5 +1364,7 @@ grant execute on function public.keepalive(), public.server_time() to anon;
 grant execute on function private.is_member(uuid), private.can_see_topic(uuid, uuid),
   private.votes_visible(uuid, int), private.extend_round_closed(uuid) to authenticated;
 
-alter default privileges in schema public revoke execute on functions from public, anon, authenticated;
-alter default privileges in schema private revoke execute on functions from public, anon, authenticated;
+-- New functions are not executable by PUBLIC by default; each must be granted explicitly.
+alter default privileges revoke execute on functions from public;
+alter default privileges in schema public revoke execute on functions from anon, authenticated;
+alter default privileges in schema private revoke execute on functions from anon, authenticated;

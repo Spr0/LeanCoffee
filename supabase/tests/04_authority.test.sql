@@ -1,6 +1,6 @@
 -- Facilitator authority, handover, reclaim, and removal.
 begin;
-select plan(17);
+select plan(18);
 
 select tests.login(tests.u(1));
 select set_config('t.created', public.create_board('Fran')::text, true);
@@ -20,6 +20,14 @@ select throws_ok(format('select public.lock_board(%L, true)', current_setting('t
   'P0001', 'not_facilitator', 'participant cannot lock the board');
 select throws_ok(format('select public.remove_participant(%L, %L)', current_setting('t.board'), tests.u(3)),
   'P0001', 'not_facilitator', 'participant cannot remove someone');
+select tests.login(tests.u(1));
+select public.pass_facilitator(current_setting('t.board')::uuid, tests.u(2));
+select tests.login(tests.u(2));
+select throws_ok(format('select public.remove_participant(%L, %L)', current_setting('t.board'), tests.u(1)),
+  'P0001', 'cannot_remove_owner', 'nobody can remove the board owner');
+select tests.login(tests.u(1));
+select public.reclaim_facilitator(current_setting('t.board')::uuid);
+select tests.login(tests.u(2));
 select throws_ok(format('select public.pass_facilitator(%L, %L)', current_setting('t.board'), tests.u(2)),
   'P0001', 'not_facilitator', 'participant cannot take the facilitator role');
 
