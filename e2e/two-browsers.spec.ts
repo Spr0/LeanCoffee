@@ -49,6 +49,8 @@ test('facilitator and participant see each other and live changes', async ({ bro
   await expect(people(facilitator)).not.toContainText('Pat (2)')
 
   await facilitator.getByRole('button', { name: 'Start brainstorm for 2 people' }).click()
-  await expect(participant.getByRole('heading', { name: 'Brainstorm' })).toBeVisible()
+  await expect(
+    participant.getByRole('heading', { name: 'Write the topics you want to talk about' }),
+  ).toBeVisible()
   await expect(participant.getByRole('navigation', { name: 'Session progress' })).toBeVisible()
 })

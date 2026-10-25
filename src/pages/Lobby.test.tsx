@@ -78,6 +78,7 @@ function makeCtx(userId: string): BoardContext {
       gone: false,
       connection: 'live',
       offsetMs: 0,
+      reload: async () => {},
     },
     state,
     userId,

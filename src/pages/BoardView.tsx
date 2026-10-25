@@ -88,7 +88,20 @@ export default function BoardView({
   return (
     <div className="flex min-h-screen flex-col">
       <Header
-        context={PHASE_LABEL[state.phase]}
+        context={
+          state.phase === 'lobby' ? (
+            PHASE_LABEL.lobby
+          ) : (
+            <>
+              <span className="hidden max-w-[320px] truncate text-ink sm:inline">
+                {state.name || 'Lean Coffee'}
+              </span>
+              <span className="rounded-md bg-surface px-2 py-1 text-[13px] font-extrabold tracking-[0.08em] text-ink">
+                {code}
+              </span>
+            </>
+          )
+        }
         right={
           isFacilitator && (
             <span className="rounded-md bg-teal-soft px-2.5 py-1 text-[13px] font-extrabold tracking-[0.08em] text-teal">

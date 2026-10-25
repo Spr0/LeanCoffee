@@ -52,7 +52,7 @@ export function ThemeToggle() {
 }
 
 /** Common 64 px header for every screen. */
-export function Header({ context, right }: { context?: string; right?: ReactNode }) {
+export function Header({ context, right }: { context?: ReactNode; right?: ReactNode }) {
   return (
     <header className="flex h-16 shrink-0 items-center justify-between border-b border-line-soft bg-ground px-4 sm:px-10">
       <div className="flex items-center gap-3">

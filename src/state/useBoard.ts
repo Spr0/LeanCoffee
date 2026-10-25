@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { rpc, supabase } from '../lib/supabase'
 import { measureOffset } from '../lib/time'
 import type {
@@ -23,7 +23,7 @@ export interface BoardData {
   takeaways: Takeaway[]
 }
 
-type Table =
+export type Table =
   'participants' | 'topics' | 'votes' | 'extend_rounds' | 'extend_votes' | 'actions' | 'takeaways'
 
 const KEYS: Record<Table, keyof BoardData> = {
@@ -57,6 +57,8 @@ export interface UseBoard {
   gone: boolean
   connection: Connection
   offsetMs: number
+  /** Reloads one table now, for screens that must see their own write before the next action. */
+  reload: (table: Table) => Promise<void>
 }
 
 const HEARTBEAT_MS = 20_000
@@ -74,6 +76,8 @@ export function useBoard(boardId: string): UseBoard {
   const [gone, setGone] = useState(false)
   const [connection, setConnection] = useState<Connection>('connecting')
   const [offsetMs, setOffsetMs] = useState(0)
+  const reloader = useRef<(table: Table) => Promise<void>>(async () => {})
+  const reload = useCallback((table: Table) => reloader.current(table), [])
 
   const loaders = useCallback(
     (isActive: () => boolean, onGone: () => void) => {
@@ -145,6 +149,7 @@ export function useBoard(boardId: string): UseBoard {
       setGone(true)
     }
     const { loadTable, refresh, syncClock, beat } = loaders(() => active, onGone)
+    reloader.current = loadTable
 
     void refresh()
     void syncClock()
@@ -210,5 +215,5 @@ export function useBoard(boardId: string): UseBoard {
     }
   }, [boardId, loaders])
 
-  return { data, loaded, gone, connection, offsetMs }
+  return { data, loaded, gone, connection, offsetMs, reload }
 }
