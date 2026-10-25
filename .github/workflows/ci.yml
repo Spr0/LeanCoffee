@@ -18,6 +18,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
@@ -28,15 +30,21 @@ jobs:
       - run: npm run typecheck
       - run: npm run format:check
       - run: npm test
-      - run: npm run build
+      - name: Build (placeholder Supabase project; the real key is checked on Netlify)
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: https://placeholder.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_placeholder
       - name: Dependency audit
         run: npm audit --audit-level=high
       - name: Build output contains no privileged Supabase keys
+        run: node scripts/check-dist-keys.mjs dist
+      - name: The key check catches a service-role JWT
         run: |
-          if grep -rEl 'service_role|sb_secret_' dist; then
-            echo "::error::Privileged key material found in build output"
-            exit 1
-          fi
+          mkdir -p "$RUNNER_TEMP/canary"
+          # Build a fake (unsigned) token whose payload says role=service_role.
+          node -e "const b=(o)=>Buffer.from(JSON.stringify(o)).toString('base64url');console.log('eyJ'+b({alg:'none'}).slice(3)+'.'+b({role:'service_role'})+'.sig')" > "$RUNNER_TEMP/canary/x.js"
+          if node scripts/check-dist-keys.mjs "$RUNNER_TEMP/canary"; then echo "::error::key check missed a service_role JWT"; exit 1; fi
 
   secrets:
     name: Secret scan (gitleaks, full history)
@@ -48,6 +56,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - name: Install gitleaks (checksum verified)
         run: |
@@ -62,6 +71,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
@@ -84,6 +95,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
@@ -116,11 +129,11 @@ jobs:
         run: npm run test:e2e
       - name: Lighthouse accessibility (every session screen, light and dark)
         run: |
-          npm install --no-save --prefix "$RUNNER_TEMP/lh" lighthouse@12.8.2
+          npm ci --prefix tools/lighthouse --ignore-scripts
           npm run build
           npx vite preview --host 127.0.0.1 --port 4173 --strictPort &
-          npx wait-on -t 60000 http://127.0.0.1:4173 2>/dev/null || sleep 5
-          node scripts/lighthouse-a11y.mjs http://127.0.0.1:4173 "$RUNNER_TEMP/lh"
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:4173/ >/dev/null && break; sleep 1; done
+          node scripts/lighthouse-a11y.mjs http://127.0.0.1:4173 tools/lighthouse
       - name: Upload screen captures for design review
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

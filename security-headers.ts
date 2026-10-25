@@ -41,7 +41,9 @@ export function securityHeadersPlugin(supabaseUrl: string | undefined): Plugin {
   return {
     name: 'lean-coffee-security-headers',
     generateBundle() {
-      if (!headers) return
+      // A production build without the URL would ship without a CSP; refuse instead.
+      if (!headers)
+        this.error('VITE_SUPABASE_URL must be set to build (it defines the security headers)')
       const lines = [
         '/*',
         ...Object.entries(headers).map(([k, v]) => `  ${k}: ${v}`),

@@ -1,7 +1,8 @@
 # Netlify build. Security headers are generated into dist/_headers at build time
 # (security-headers.ts) from VITE_SUPABASE_URL, which is set in the Netlify UI.
 [build]
-  command = "npm run build"
+  # The key check scans the real bundle, built with the production key.
+  command = "npm run build && node scripts/check-dist-keys.mjs dist"
   publish = "dist"
 
 [build.environment]

@@ -10,13 +10,26 @@ test.describe('response headers (prompt 4.8)', () => {
     for (const path of ['/', '/b/ZZZZ-ZZZZ']) {
       const res = await request.get(path)
       const h = res.headers()
-      const csp = h['content-security-policy'] ?? ''
-      expect(csp).toContain("default-src 'self'")
-      expect(csp).toContain("script-src 'self'")
-      expect(csp).toContain("frame-ancestors 'none'")
-      expect(csp).toContain("base-uri 'none'")
-      expect(csp).toContain(`connect-src 'self' ${new URL(url).origin}`)
-      expect(csp).not.toContain('unsafe-eval')
+      const directives = Object.fromEntries(
+        (h['content-security-policy'] ?? '')
+          .split(';')
+          .map((d) => d.trim().split(/\s+/))
+          .filter((d) => d[0])
+          .map(([name, ...values]) => [name, [...values].sort()]),
+      )
+      const supabase = new URL(url).origin
+      expect(directives).toEqual({
+        'default-src': ["'self'"],
+        'script-src': ["'self'"],
+        'style-src': ["'self'", "'unsafe-inline'"],
+        'img-src': ["'self'", 'data:'],
+        'font-src': ["'self'"],
+        'connect-src': ["'self'", supabase, supabase.replace(/^http/, 'ws')].sort(),
+        'frame-ancestors': ["'none'"],
+        'base-uri': ["'none'"],
+        'form-action': ["'self'"],
+        'object-src': ["'none'"],
+      })
       expect(h['strict-transport-security']).toBe('max-age=63072000; includeSubDomains')
       expect(h['x-content-type-options']).toBe('nosniff')
       expect(h['referrer-policy']).toBe('no-referrer')
@@ -26,7 +39,8 @@ test.describe('response headers (prompt 4.8)', () => {
       expect(h['cross-origin-opener-policy']).toBe('same-origin')
     }
     expect((await request.get('/b/ZZZZ-ZZZZ')).headers()['x-robots-tag']).toBe('noindex')
-    expect(await (await request.get('/robots.txt')).text()).toContain('Disallow: /b/')
+    // Crawlers must be able to fetch /b/ pages to see the noindex header (decision D53).
+    expect(await (await request.get('/robots.txt')).text()).not.toContain('Disallow: /b/')
   })
 })
 

@@ -72,6 +72,30 @@ test('non-members and removed members receive no realtime events', async () => {
   await new Promise((r) => setTimeout(r, 3000))
   expect(memberEvents).toEqual([])
 
+  // An outsider on a public (non-private) channel with no row filter: inserts and updates are
+  // still filtered by RLS. Deletes are not (Supabase limitation, decision D19): they carry only
+  // the row's random id, never content.
+  const publicEvents: { type: string; payload: string }[] = []
+  await outsider.client.realtime.setAuth()
+  const pub = outsider.client.channel(`snoop-${Date.now()}`)
+  for (const table of ['board_state', 'participants', 'topics', 'actions'])
+    pub.on('postgres_changes', { event: '*', schema: 'public', table }, (p) =>
+      publicEvents.push({ type: `${table}:${p.eventType}`, payload: JSON.stringify(p) }),
+    )
+  await new Promise<void>((resolve) => {
+    pub.subscribe((s) => s !== 'CLOSED' && resolve())
+    setTimeout(resolve, 10_000)
+  })
+  const { data: topicId } = await owner.client.rpc('add_topic', {
+    p_board: boardId,
+    p_text: 'Secret parking-lot topic',
+  })
+  await owner.client.rpc('start_phase', { p_board: boardId, p_phase: 'clarify' })
+  await owner.client.rpc('delete_topic', { p_topic: topicId })
+  await new Promise((r) => setTimeout(r, 3000))
+  expect(publicEvents.filter((e) => !e.type.endsWith(':DELETE'))).toEqual([])
+  for (const e of publicEvents) expect(e.payload).not.toContain('Secret parking-lot topic')
+
   await owner.client.rpc('end_session', { p_board: boardId })
   for (const c of [owner, member, outsider]) await c.client.removeAllChannels()
 })

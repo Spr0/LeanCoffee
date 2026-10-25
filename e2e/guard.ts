@@ -17,15 +17,20 @@ export function guard(page: Page) {
     problems.push(`dialog opened: ${d.message()}`)
     void d.dismiss()
   })
-  page.on('request', (r) => {
+  const allowed = (origin: string) =>
+    origin === app || origin === supabase || origin === supabase.replace(/^http/, 'ws')
+  page.on('request', async (r) => {
     const url = new URL(r.url())
     if (url.protocol === 'data:' || url.protocol === 'blob:') return
-    if (
-      url.origin !== app &&
-      url.origin !== supabase.replace(/^http/, url.protocol.startsWith('ws') ? 'ws' : 'http')
-    )
-      problems.push(`request to unexpected origin: ${url.origin}`)
-    if (url.origin !== app && r.headers()['referer']) problems.push(`Referer sent to ${url.origin}`)
+    if (!allowed(url.origin)) problems.push(`request to unexpected origin: ${url.origin}`)
+    // allHeaders() includes the Referer, which headers() may omit.
+    const headers = await r.allHeaders().catch(() => ({}) as Record<string, string>)
+    if (url.origin !== app && headers['referer']) problems.push(`Referer sent to ${url.origin}`)
+  })
+  // WebSockets do not raise request events; check them separately.
+  page.on('websocket', (ws) => {
+    const origin = new URL(ws.url()).origin
+    if (!allowed(origin)) problems.push(`websocket to unexpected origin: ${origin}`)
   })
   return {
     problems,

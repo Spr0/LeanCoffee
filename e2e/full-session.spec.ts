@@ -57,7 +57,10 @@ test('six people run a whole session', async ({ browser }) => {
     await page.getByRole('button', { name: 'Join session' }).click()
     await expect(page.getByText(/Waiting for Fran/)).toBeVisible()
   }
-  await expect(fran.getByRole('button', { name: 'Start brainstorm for 6 people' })).toBeVisible()
+  // The lobby counts people seen in the last 45 s; allow the last heartbeat to arrive.
+  await expect(fran.getByRole('button', { name: 'Start brainstorm for 6 people' })).toBeVisible({
+    timeout: 20_000,
+  })
   await fran.getByRole('button', { name: 'Start brainstorm for 6 people' }).click()
 
   // Brainstorm: everyone writes privately.

@@ -47,7 +47,7 @@ A daily job at 03:17 UTC (`pg_cron`, `private.purge_expired`) does the deleting.
 
 ## Web protections
 
-Every page is served with: a Content Security Policy (`default-src 'self'`, scripts only from the app, network calls only to the app and its Supabase project, no framing), HSTS, `nosniff`, `Referrer-Policy: no-referrer` (board links never leak to other sites), a Permissions-Policy denying camera, microphone and location, and `Cross-Origin-Opener-Policy: same-origin`. Invite pages are `noindex` and disallowed in `robots.txt`. The headers are generated at build time by `security-headers.ts`, and the end-to-end tests run under them.
+Every page is served with: a Content Security Policy (`default-src 'self'`, scripts only from the app, network calls only to the app and its Supabase project, no framing), HSTS, `nosniff`, `Referrer-Policy: no-referrer` (board links never leak to other sites), a Permissions-Policy denying camera, microphone and location, and `Cross-Origin-Opener-Policy: same-origin`. Invite pages are sent with `X-Robots-Tag: noindex`; `robots.txt` deliberately allows crawling, because a crawler blocked from a page never sees its `noindex`. The headers are generated at build time by `security-headers.ts` (the build fails without them), the local preview server sends the same headers so every end-to-end test runs under the real policy, and the header test is re-run against the live site after each deployment.
 
 ## If a link leaks
 
@@ -58,7 +58,7 @@ Every page is served with: a Content Security Policy (`default-src 'self'`, scri
 
 ## If the recovery link leaks
 
-The recovery link only restores the facilitator role to someone who has already joined the board. If it leaks, the board creator can take the role back from the sidebar at any time (no link needed), then lock the board.
+The recovery link only works for someone who has joined the board, and it keeps working (it is not changed when used). If it leaks to someone already in the board, they can take the facilitator role. The board creator can take it back from the sidebar at any time without the link; then **remove that person** (which blocks their identity) and **lock the board** (which stops them rejoining under a new identity).
 
 ## Rotating keys
 
@@ -75,13 +75,15 @@ The app uses only the Supabase **publishable key**, which is public by design (i
 - **Flooding failed lookups** can slow down an attacker's own requests and anyone else who is also failing, but not people entering valid codes.
 - **One Supabase project, no staging database.** Every migration is proven against a throwaway database in CI first; production changes are applied by hand in the SQL Editor. Supabase branching (paid) is the upgrade path.
 - **The Supabase Email sign-in provider is enabled but unused.** Turning it off in the dashboard removes an unneeded way to create accounts.
-- **Live updates rely on Supabase Realtime applying Row-Level Security.** Tested: outsiders and removed members receive no events.
-- **The free Supabase project pauses after a week of no activity.** A daily keep-alive prevents this (see README).
+- **Live updates rely on Supabase Realtime applying Row-Level Security.** Tested: outsiders (on private or public channels) and removed members receive no inserts or updates. Supabase does not filter **delete** events by Row-Level Security: any signed-in visitor listening to a table can see that a row with a random id was deleted, and when. They never see content (tested), and every table uses a random id as its key so nothing about people or votes can be inferred. In the Supabase dashboard, Realtime settings, turn off **Allow public access** so only private, member-checked channels work.
+- **The recovery link is not rotated** after use. See "If the recovery link leaks".
+- **The free Supabase project pauses after a week of no activity.** A daily keep-alive (a Netlify scheduled function, with a GitHub Actions backup) is set up at deployment; the README explains how to resume a paused project.
 
 ## Controls checked in CI on every push
 
 - ESLint bans `dangerouslySetInnerHTML` and `innerHTML`.
-- `npm audit --audit-level=high` (currently 0 vulnerabilities of any level), full-history gitleaks scan, and a check that the build output contains no privileged Supabase key.
+- `npm audit --audit-level=high` (currently 0 vulnerabilities of any level) and a full-history gitleaks scan.
+- A privileged-key check (`scripts/check-dist-keys.mjs`) that also decodes JWT-style keys, because their role is not visible as plain text. It runs in CI against a canary to prove it can fail, and on Netlify against the real production bundle.
 - 115 database assertions (pgTAP): access matrix, hidden values, facilitator authority, throttling, caps, retention, and structural checks (RLS on every table, `search_path` pinned on every privileged function, minimal grants).
-- End-to-end: headers and CSP, script-like input in every field, no requests to other origins, no Referer to Supabase, direct API probing as an outsider, a removed member and a signed-out visitor, realtime isolation, and a 12-person load run.
-- GitHub Actions pinned to commit SHAs; Dependabot for npm and Actions; gitleaks pre-commit hook.
+- End-to-end: exact CSP and header checks, script-like input in every field, no requests or websockets to other origins, no Referer to Supabase, direct API probing as an outsider, a removed member and a signed-out visitor, realtime isolation, and a 12-person load run.
+- GitHub Actions pinned to commit SHAs, checkouts do not keep credentials, and every tool CI installs is version-locked (Lighthouse has its own lockfile in `tools/lighthouse`); Dependabot for npm and Actions; gitleaks pre-commit hook.
