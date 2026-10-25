@@ -1,0 +1,10 @@
+#!/bin/sh
+# Blocks commits that contain secrets. Install gitleaks: https://github.com/gitleaks/gitleaks
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks git --pre-commit --staged --no-banner --redact || {
+    echo "gitleaks found a possible secret in the staged changes. Commit blocked."
+    exit 1
+  }
+else
+  echo "warning: gitleaks not installed; secret scan skipped (CI still runs it)." >&2
+fi

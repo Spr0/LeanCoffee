@@ -1,0 +1,43 @@
+@import '@fontsource/plus-jakarta-sans/500.css';
+@import '@fontsource/plus-jakarta-sans/700.css';
+@import '@fontsource/plus-jakarta-sans/800.css';
+@import 'tailwindcss';
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  --ink: #1e2a28;
+  --muted: #55625f;
+  --teal: #0f766e;
+  --teal-soft: #d9f0ec;
+  --surface: #f3f5f4;
+  --ground: #ffffff;
+  --urgent: #c2410c;
+}
+
+[data-theme='dark'] {
+  --ink: #eef0f4;
+  --muted: #a4adbb;
+  --surface: #1a1f28;
+  --ground: #12151b;
+}
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
