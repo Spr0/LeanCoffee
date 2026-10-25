@@ -56,6 +56,26 @@ jobs:
           tar xzf gitleaks.tgz gitleaks
       - run: ./gitleaks git --no-banner --redact -v .
 
+  database:
+    name: Database and RLS tests (pgTAP on local Supabase)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Start Supabase (database, auth, realtime only)
+        run: npx supabase start -x studio,imgproxy,storage-api,edge-runtime,logflare,vector,mailpit,postgres-meta,supavisor
+      - name: Apply migrations from scratch
+        run: npx supabase db reset
+      - name: pgTAP suite
+        run: npx supabase test db
+      - name: Database lint
+        run: npx supabase db lint --level warning --fail-on error
+
   e2e:
     name: End-to-end smoke (Playwright, axe)
     runs-on: ubuntu-latest
