@@ -1,0 +1,30 @@
+name: Keep Supabase awake
+
+# Backup for the Netlify scheduled function (netlify/functions/keepalive.mts). GitHub may disable
+# scheduled workflows in quiet repositories, which is why there are two.
+on:
+  schedule:
+    - cron: '23 6 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main, 'claude/**']
+    paths: ['.github/workflows/keepalive.yml', 'netlify/functions/keepalive.mts']
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_URL: https://dzvfedktsxomnzokeqap.supabase.co
+      # The publishable key is public by design: it ships in every visitor's browser.
+      SUPABASE_PUBLISHABLE_KEY: sb_publishable_RC5OaN_H39LnHw9Gi7Wtog_45Cxq_4j
+    steps:
+      - name: Call keepalive()
+        run: |
+          out=$(curl -fsS --max-time 20 -X POST "$SUPABASE_URL/rest/v1/rpc/keepalive" \
+            -H "apikey: $SUPABASE_PUBLISHABLE_KEY" -H "Content-Type: application/json" -d '{}')
+          echo "keepalive returned: $out"
+          echo "::notice title=Keep-alive::Supabase answered $out at $(date -u +%FT%TZ)"
+          test "$out" = '"ok"'

@@ -2,7 +2,7 @@
 
 A free, realtime Lean Coffee meeting app for small teams (3 to 12 people) on a Teams call. The facilitator shares the Stage view; everyone else joins in a browser tab with a private link and a display name. No accounts. Results download as Word and Excel files.
 
-- Live site: https://leancoffee-app.netlify.app (not deployed yet)
+- Live site: https://leancoffee-app.netlify.app
 - Build brief: [`docs/handoff/`](docs/handoff/) (build prompt, functional spec, mockups, addendum)
 - Decisions log: [`docs/decisions.md`](docs/decisions.md)
 - Security: [`SECURITY.md`](SECURITY.md)
@@ -59,3 +59,29 @@ CI (`.github/workflows/ci.yml`) runs all of these plus `npm audit --audit-level=
 ## Export caveat
 
 Word and Excel files are generated in the browser (`docx`, `exceljs`). CI checks them by reading them back and converting them with headless LibreOffice; real Microsoft Word and Excel were not available in CI. Open one sample of each in Word and Excel before relying on them. CI keeps samples as the `export-samples` artifact.
+
+## Deployment
+
+Netlify builds every push from GitHub (`netlify.toml`): `npm run build`, then `scripts/check-dist-keys.mjs` scans the real bundle for privileged keys. Production is `main`; other branches get branch-deploy previews at `https://<branch>--leancoffee-app.netlify.app` (slashes become dashes).
+
+| Netlify environment variable    | Scopes            | Value                                            |
+| ------------------------------- | ----------------- | ------------------------------------------------ |
+| `VITE_SUPABASE_URL`             | Builds, Functions | `https://dzvfedktsxomnzokeqap.supabase.co`       |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Builds, Functions | the project's publishable key (public by design) |
+
+The build fails if `VITE_SUPABASE_URL` is missing, because the security headers (`dist/_headers`) are generated from it.
+
+Before promoting to production, run the browser suite against the preview:
+
+```sh
+E2E_BASE_URL=https://<branch>--leancoffee-app.netlify.app npx playwright test e2e/smoke.spec.ts e2e/security.spec.ts e2e/two-browsers.spec.ts
+```
+
+## Keeping the free database awake
+
+Supabase pauses free projects after 7 days with little activity. Two independent jobs call the `keepalive()` function once a day:
+
+1. **Netlify scheduled function** `netlify/functions/keepalive.mts` (`@daily`, UTC). Runs only on the published production deploy. Netlify shows its runs under Logs, Functions.
+2. **GitHub Actions** `.github/workflows/keepalive.yml` (06:23 UTC daily, also runnable by hand from the Actions tab). GitHub can disable scheduled workflows in repositories with no recent activity, which is why there are two.
+
+**If the project is paused anyway:** open the Supabase dashboard, choose the project, and select **Resume project**. Paused free projects can be restored for up to a year after pausing. Data is kept while paused. After resuming, open the app once to confirm it loads.

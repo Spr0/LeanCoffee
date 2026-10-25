@@ -1,0 +1,11 @@
+# Gitleaks configuration: the default rules, plus one documented exception.
+[extend]
+useDefault = true
+
+# The Supabase publishable key is public by design (it ships in every visitor's browser) and is
+# needed by the keep-alive workflow. Only this exact value is allowed; any other key still fails.
+# If the key is rotated, update it here and in .github/workflows/keepalive.yml.
+[[allowlists]]
+description = "Supabase publishable key (public by design)"
+regexTarget = "match"
+regexes = ['''sb_publishable_RC5OaN_H39LnHw9Gi7Wtog_45Cxq_4j''']
