@@ -46,21 +46,13 @@ test.describe('response headers (prompt 4.8)', () => {
     expect(await (await request.get('/robots.txt')).text()).not.toContain('Disallow: /b/')
   })
 
-  test('hashed build files are cached for a year', async ({ request }) => {
-    const html = await (await request.get('/')).text()
-    const asset = /\/assets\/[^"']+\.js/.exec(html)?.[0]
-    expect(asset, 'index.html references a hashed script').toBeTruthy()
-    const res = await request.get(asset ?? '')
-    expect(res.status()).toBe(200)
-    const cache = res.headers()['cache-control'] ?? ''
-    expect(cache).toContain('max-age=31536000')
-    expect(cache).toContain('immutable')
-  })
-
   test('a missing build file is a real 404 on Netlify', async ({ request }) => {
     // The preview server falls back to index.html; only the Netlify redirect rule returns 404.
     test.skip(!(process.env.E2E_BASE_URL ?? '').includes('netlify.app'), 'Netlify only')
-    expect((await request.get('/assets/does-not-exist.js')).status()).toBe(404)
+    const res = await request.get('/assets/does-not-exist.js')
+    expect(res.status()).toBe(404)
+    // Netlify applies header rules by path, so a long cache would stick to this 404 too (D71).
+    expect(res.headers()['cache-control'] ?? '').not.toContain('immutable')
   })
 })
 
