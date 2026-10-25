@@ -41,10 +41,10 @@ select throws_ok(format('select public.start_phase(%L, %L)', current_setting('t.
 
 -- Handover takes effect immediately.
 select public.pass_facilitator(current_setting('t.board')::uuid, tests.u(2));
-select throws_ok(format('select public.timer_pause(%L)', current_setting('t.board')),
+select throws_ok(format('select public.timer_resume(%L)', current_setting('t.board')),
   'P0001', 'not_facilitator', 'previous facilitator loses control after handover');
 select tests.login(tests.u(2));
-select lives_ok(format('select public.timer_pause(%L)', current_setting('t.board')), 'new facilitator has control');
+select lives_ok(format('select public.timer_resume(%L)', current_setting('t.board')), 'new facilitator has control');
 
 -- Owner reclaims without a token.
 select tests.login(tests.u(1));

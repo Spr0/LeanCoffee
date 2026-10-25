@@ -6,6 +6,7 @@
 -- 3. An ended board is read-only for content and settings (spec F25). Access controls (lock,
 --    remove, hand over, reclaim) still work so a leaked link can be shut down after the session.
 -- 4. Signed-out callers can run only keepalive() (prompt 4.6 and 6.4).
+-- 5. Brainstorm opens with its clock stopped at the full time; the facilitator starts it (D64).
 
 -- Ends the current topic as discussed, skipped, or deferred. Callers hold the board lock.
 create function private.finish_topic(p_board uuid, p_outcome text) returns uuid
@@ -274,6 +275,60 @@ begin
   end if;
   delete from public.actions where id = p_action;
   perform private.touch(a.board_id);
+end;
+$$;
+
+-- Brainstorm opens with a stopped clock; timer_resume starts it.
+create or replace function public.start_phase(p_board uuid, p_phase text) returns void
+language plpgsql security definer
+set search_path = ''
+as $$
+declare
+  s public.board_state := private.facilitator_state(p_board);
+  v_secs int;
+begin
+  if private.phase_rank(p_phase) is null or private.phase_rank(p_phase) <= private.phase_rank(s.phase) then
+    raise exception 'invalid_phase_order';
+  end if;
+
+  -- Leaving Discuss mid-topic: book the time and mark it discussed.
+  if s.current_topic_id is not null then
+    perform private.close_segment(p_board);
+    update public.topics
+       set status = 'discussed',
+           discussed_seq = (select coalesce(max(discussed_seq), 0) + 1 from public.topics where board_id = p_board)
+     where id = s.current_topic_id and status = 'discussing';
+    update public.extend_rounds set closed_at = now(), result = 'move_on'
+     where board_id = p_board and closed_at is null;
+  end if;
+  if s.phase = 'vote' and s.votes_revealed_at is null then
+    perform private.do_reveal(p_board);
+  end if;
+
+  v_secs := case p_phase
+    when 'brainstorm' then (s.settings ->> 'brainstorm_s')::int
+    when 'vote' then (s.settings ->> 'vote_s')::int
+    when 'wrapup' then nullif((s.settings ->> 'wrapup_s')::int, 0)
+  end;
+
+  update public.board_state
+     set phase = p_phase,
+         phase_ends_at = case when v_secs is null or p_phase = 'brainstorm' then null
+                              else now() + make_interval(secs => v_secs) end,
+         paused_remaining_ms = case when p_phase = 'brainstorm' then v_secs * 1000 end,
+         timer_started_at = null, current_topic_id = null, pitch_topic_id = null,
+         started_at = case when p_phase = 'brainstorm' then coalesce(started_at, now()) else started_at end,
+         ended_at = case when p_phase = 'ended' then now() else ended_at end,
+         vote_round = case when p_phase = 'vote' then 0 else vote_round end,
+         base_round = case when p_phase = 'vote' then 0 else base_round end,
+         tie_topic_ids = '{}',
+         votes_revealed_at = case when p_phase = 'vote' then null else votes_revealed_at end
+   where board_id = p_board;
+
+  if p_phase = 'vote' then
+    update public.participants set finished_voting = false where board_id = p_board;
+  end if;
+  perform private.touch(p_board);
 end;
 $$;
 

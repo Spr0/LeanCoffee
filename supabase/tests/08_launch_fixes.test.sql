@@ -1,7 +1,7 @@
 -- Regression tests for the launch audit fixes: Move on applies itself, the facilitator can override
 -- it, skipped topics come back, ended boards are read-only, and signed-out callers get only keepalive.
 begin;
-select plan(20);
+select plan(22);
 
 select tests.login(tests.u(1));
 select set_config('t.created', public.create_board('Fran')::text, true);
@@ -11,6 +11,12 @@ select tests.login(tests.u(2));
 select public.join_board(current_setting('t.code'), 'Pat');
 select tests.login(tests.u(1));
 select public.start_phase(current_setting('t.board')::uuid, 'brainstorm');
+select is((select coalesce(phase_ends_at::text, 'stopped') || ':' || paused_remaining_ms from public.board_state),
+  'stopped:300000', 'Brainstorm opens with its clock stopped at the full time');
+select public.timer_resume(current_setting('t.board')::uuid);
+select ok((select phase_ends_at between now() + interval '299 seconds' and now() + interval '300 seconds'
+             and paused_remaining_ms is null from public.board_state),
+  'the facilitator starts the Brainstorm clock');
 select public.add_topic(current_setting('t.board')::uuid, 'Topic A');
 select public.add_topic(current_setting('t.board')::uuid, 'Topic B');
 select public.add_topic(current_setting('t.board')::uuid, 'Topic C');

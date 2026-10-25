@@ -18,7 +18,7 @@ select tests.login(tests.u(2));
 select throws_ok(format('select public.close_brainstorm(%L)', current_setting('t.board')), 'P0001', 'not_allowed',
   'participants cannot close Brainstorm before the clock ends');
 select tests.as_admin();
-update public.board_state set phase_ends_at = now() - interval '1 second';
+update public.board_state set phase_ends_at = now() - interval '1 second', paused_remaining_ms = null;
 select tests.login(tests.u(2));
 select public.close_brainstorm(current_setting('t.board')::uuid);
 select is((select phase from public.board_state), 'clarify', 'any member closes Brainstorm once the clock has ended');
