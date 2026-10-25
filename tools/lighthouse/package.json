@@ -3,6 +3,6 @@
   "private": true,
   "description": "Dev-only accessibility audit tool, kept apart from the app's dependency tree (see docs/decisions.md D52).",
   "dependencies": {
-    "lighthouse": "12.8.2"
+    "lighthouse": "13.5.0"
   }
 }
