@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Facilitator handover</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; background: #FFFFFF; font-family: 'Plus Jakarta Sans', sans-serif; color: #1E2A28; display: flex; flex-direction: column; overflow: hidden; position: relative">
+
+<header style="height: 64px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 40px; border-bottom: 1px solid #E1E7E5">
+<div style="display: flex; align-items: center; gap: 14px">
+<div style="width: 34px; height: 34px; border-radius: 10px; background: #0F766E; display: flex; align-items: center; justify-content: center; color: #FFFFFF">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9h10v5a4 4 0 0 1-4 4h-2a4 4 0 0 1-4-4V9zM16 10h1.5a2 2 0 0 1 0 4H16"/></svg>
+</div>
+<div style="font-weight: 800; font-size: 19px; letter-spacing: -0.01em">Lean Coffee</div>
+<div style="width: 1px; height: 24px; background: #E1E7E5"></div>
+<div style="font-size: 15px; font-weight: 500">Product team sync</div>
+</div>
+<div style="font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #0F766E; background: #D9F0EC; border-radius: 6px; padding: 6px 10px">Facilitator</div>
+</header>
+
+<div style="flex: 1; padding: 40px; display: flex; flex-direction: column; gap: 16px">
+<div style="height: 220px; border: 1px solid #E1E7E5; border-radius: 20px; background: #F3F5F4"></div>
+<div style="height: 60px; border-radius: 12px; background: #F3F5F4"></div>
+<div style="height: 60px; border-radius: 12px; background: #F3F5F4"></div>
+</div>
+
+<div style="position: absolute; inset: 0; background: rgba(30, 42, 40, 0.55); display: flex; align-items: center; justify-content: center">
+<div role="dialog" aria-modal="true" aria-labelledby="ho-title" style="width: 560px; box-sizing: border-box; background: #FFFFFF; border-radius: 20px; padding: 32px; display: flex; flex-direction: column; gap: 20px; box-shadow: 0 24px 60px rgba(0,0,0,0.3)">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<h2 id="ho-title" style="margin: 0; font-size: 26px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em">Pass the facilitator role</h2>
+<div style="font-size: 15px; line-height: 1.5; color: #55625F">The new facilitator controls timers, topic order, and phase changes. It takes effect right away, and one person drives at a time.</div>
+</div>
+
+<div role="radiogroup" aria-label="Choose the new facilitator" style="display: flex; flex-direction: column; gap: 8px">
+<div role="radio" aria-checked="false" style="height: 52px; box-sizing: border-box; border: 1px solid #D5DDDB; border-radius: 12px; padding: 0 16px; display: flex; align-items: center; gap: 12px"><span style="width: 22px; height: 22px; box-sizing: border-box; border-radius: 50%; border: 2px solid #8A9894"></span><span style="width: 28px; height: 28px; border-radius: 50%; background: #FFD9E0; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800">M</span><span style="font-size: 16px; font-weight: 700">Maya</span></div>
+<div role="radio" aria-checked="true" style="height: 52px; box-sizing: border-box; border: 2px solid #0F766E; background: #D9F0EC; border-radius: 12px; padding: 0 16px; display: flex; align-items: center; gap: 12px"><span style="width: 22px; height: 22px; box-sizing: border-box; border-radius: 50%; border: 6px solid #0F766E; background: #FFFFFF"></span><span style="width: 28px; height: 28px; border-radius: 50%; background: #CFE6FF; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800">D</span><span style="font-size: 16px; font-weight: 800">Dev</span></div>
+<div role="radio" aria-checked="false" style="height: 52px; box-sizing: border-box; border: 1px solid #D5DDDB; border-radius: 12px; padding: 0 16px; display: flex; align-items: center; gap: 12px"><span style="width: 22px; height: 22px; box-sizing: border-box; border-radius: 50%; border: 2px solid #8A9894"></span><span style="width: 28px; height: 28px; border-radius: 50%; background: #D5F2D0; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800">S</span><span style="font-size: 16px; font-weight: 700">Sam</span></div>
+<div role="radio" aria-checked="false" style="height: 52px; box-sizing: border-box; border: 1px solid #D5DDDB; border-radius: 12px; padding: 0 16px; display: flex; align-items: center; gap: 12px"><span style="width: 22px; height: 22px; box-sizing: border-box; border-radius: 50%; border: 2px solid #8A9894"></span><span style="width: 28px; height: 28px; border-radius: 50%; background: #E4DBFF; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800">L</span><span style="font-size: 16px; font-weight: 700">Leo</span></div>
+<div role="radio" aria-checked="false" style="height: 52px; box-sizing: border-box; border: 1px solid #D5DDDB; border-radius: 12px; padding: 0 16px; display: flex; align-items: center; gap: 12px"><span style="width: 22px; height: 22px; box-sizing: border-box; border-radius: 50%; border: 2px solid #8A9894"></span><span style="width: 28px; height: 28px; border-radius: 50%; background: #FFD9B8; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800">A</span><span style="font-size: 16px; font-weight: 700">Ana</span></div>
+</div>
+
+<div style="font-size: 13px; line-height: 1.45; color: #55625F">You can take the role back from the people list at any time, and the new facilitator can pass it back to you.</div>
+
+<div style="display: flex; gap: 12px; justify-content: flex-end">
+<button style="height: 48px; padding: 0 22px; border-radius: 10px; border: 1.5px solid #8A9894; background: #FFFFFF; color: #1E2A28; font: 700 15px 'Plus Jakarta Sans', sans-serif">Cancel</button>
+<button style="height: 48px; padding: 0 26px; border-radius: 10px; border: 0; background: #0F766E; color: #FFFFFF; font: 800 15px 'Plus Jakarta Sans', sans-serif">Pass to Dev</button>
+</div>
+</div>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Guided phases board</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; background: #FFFFFF; font-family: 'Plus Jakarta Sans', sans-serif; color: #1E2A28; display: flex; flex-direction: column; overflow: hidden">
+
+<!-- Top bar -->
+<header style="height: 64px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 40px; border-bottom: 1px solid #E1E7E5">
+<div style="display: flex; align-items: center; gap: 14px">
+<div style="width: 34px; height: 34px; border-radius: 10px; background: #0F766E; display: flex; align-items: center; justify-content: center; color: #FFFFFF">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9h10v5a4 4 0 0 1-4 4h-2a4 4 0 0 1-4-4V9zM16 10h1.5a2 2 0 0 1 0 4H16"/></svg>
+</div>
+<div style="font-weight: 800; font-size: 19px; letter-spacing: -0.01em">Lean Coffee</div>
+<div style="width: 1px; height: 24px; background: #E1E7E5"></div>
+<div style="font-size: 15px; font-weight: 500">Product team sync</div>
+<div style="font-size: 12px; font-weight: 700; letter-spacing: 0.1em; background: #F3F5F4; border-radius: 6px; padding: 5px 10px">KQ7-4M2</div>
+</div>
+<div style="display: flex; align-items: center; gap: 16px">
+<div style="font-size: 14px; color: #55625F">Signed in as <span style="font-weight: 700; color: #1E2A28">Priya</span></div>
+<div style="font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #0F766E; background: #D9F0EC; border-radius: 6px; padding: 6px 10px">Facilitator</div>
+</div>
+</header>
+
+<!-- Phase stepper -->
+<section style="height: 88px; flex: none; display: flex; align-items: center; padding: 0 40px; background: #F3F5F4; border-bottom: 1px solid #E1E7E5">
+
+<div style="display: flex; align-items: center; gap: 12px">
+<div style="width: 34px; height: 34px; border-radius: 50%; background: #D9F0EC; color: #0F766E; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+<div><div style="font-size: 15px; font-weight: 700">Brainstorm</div><div style="font-size: 13px; color: #55625F">5:00 · 9 topics</div></div>
+</div>
+<div style="flex: 1; height: 2px; background: #0F766E; margin: 0 16px"></div>
+
+<div style="display: flex; align-items: center; gap: 12px">
+<div style="width: 34px; height: 34px; border-radius: 50%; background: #D9F0EC; color: #0F766E; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+<div><div style="font-size: 15px; font-weight: 700">Clarify</div><div style="font-size: 13px; color: #55625F">2:00 · 1 merged</div></div>
+</div>
+<div style="flex: 1; height: 2px; background: #0F766E; margin: 0 16px"></div>
+
+<div style="display: flex; align-items: center; gap: 12px">
+<div style="width: 34px; height: 34px; border-radius: 50%; background: #0F766E; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 800">3</div>
+<div><div style="font-size: 15px; font-weight: 800">Vote</div><div style="font-size: 13px; color: #0F766E; font-weight: 700">0:42 left of 1:00</div></div>
+</div>
+<div style="flex: 1; height: 2px; background: #C9D3D0; margin: 0 16px"></div>
+
+<div style="display: flex; align-items: center; gap: 12px">
+<div style="width: 34px; height: 34px; border-radius: 50%; border: 2px solid #AAB8B4; box-sizing: border-box; color: #55625F; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700">4</div>
+<div><div style="font-size: 15px; font-weight: 700; color: #55625F">Discuss</div><div style="font-size: 13px; color: #55625F">5:00 per topic</div></div>
+</div>
+<div style="flex: 1; height: 2px; background: #C9D3D0; margin: 0 16px"></div>
+
+<div style="display: flex; align-items: center; gap: 12px">
+<div style="width: 34px; height: 34px; border-radius: 50%; border: 2px solid #AAB8B4; box-sizing: border-box; color: #55625F; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700">5</div>
+<div><div style="font-size: 15px; font-weight: 700; color: #55625F">Wrap-up</div><div style="font-size: 13px; color: #55625F">Retro and export</div></div>
+</div>
+
+</section>
+
+<div style="flex: 1; min-height: 0; display: flex">
+
+<!-- Voting area -->
+<main style="flex: 1; min-width: 0; padding: 32px 40px 24px; display: flex; flex-direction: column; gap: 22px">
+
+<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 24px">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<h1 style="margin: 0; font-size: 30px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em">Spend your 3 dots on what you most want to discuss</h1>
+<div style="font-size: 15px; line-height: 1.45; color: #55625F; max-width: 640px">Stack dots on one topic or spread them out. You can change your mind until the clock ends.</div>
+</div>
+<div style="flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 10px">
+<div style="display: flex; align-items: center; gap: 12px"><span style="font-size: 14px; font-weight: 700">Your dots</span><span style="display: inline-flex; gap: 6px"><span style="width: 18px; height: 18px; border-radius: 50%; background: #0F766E"></span><span style="width: 18px; height: 18px; border-radius: 50%; background: #0F766E"></span><span style="width: 18px; height: 18px; border-radius: 50%; border: 2px solid #0F766E; box-sizing: border-box"></span></span><span style="font-size: 14px; color: #55625F">1 left</span></div>
+<div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: #0F766E; background: #D9F0EC; border-radius: 16px; padding: 6px 12px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.2A9.8 9.8 0 0 1 12 5c5 0 9 4 10 7a11 11 0 0 1-3.2 4.5M6.1 6.1C4.2 7.5 2.8 9.6 2 12c1 3 5 7 10 7 1.6 0 3-.4 4.3-1"/></svg>Counts hidden until reveal</div>
+</div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px">
+
+<div style="border: 1px solid #D5DDDB; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 14px; background: #FFFFFF">
+<div style="font-size: 16px; line-height: 1.35; font-weight: 700">How do we onboard remote hires in their first two weeks?</div>
+<div style="font-size: 13px; color: #55625F">Maya</div>
+<div style="display: flex; align-items: center; gap: 8px"><button aria-label="Remove a dot" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid #AAB8B4; background: #FFFFFF; color: #1E2A28; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button><div style="flex: 1; display: flex; justify-content: center; gap: 6px"><span style="width: 16px; height: 16px; border-radius: 50%; background: #0F766E"></span></div><button aria-label="Add a dot" style="width: 44px; height: 44px; border-radius: 10px; border: 0; background: #0F766E; color: #FFFFFF; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
+</div>
+
+<div style="border: 1px solid #D5DDDB; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 14px; background: #FFFFFF">
+<div style="font-size: 16px; line-height: 1.35; font-weight: 700">Saying no to stakeholders without burning trust</div>
+<div style="font-size: 13px; color: #55625F">Dev</div>
+<div style="display: flex; align-items: center; gap: 8px"><button aria-label="Remove a dot" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid #AAB8B4; background: #FFFFFF; color: #1E2A28; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button><div style="flex: 1; display: flex; justify-content: center; gap: 6px"><span style="width: 16px; height: 16px; border-radius: 50%; background: #0F766E"></span></div><button aria-label="Add a dot" style="width: 44px; height: 44px; border-radius: 10px; border: 0; background: #0F766E; color: #FFFFFF; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
+</div>
+
+<div style="border: 1px solid #D5DDDB; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 14px; background: #FFFFFF">
+<div style="font-size: 16px; line-height: 1.35; font-weight: 700">AI tools: what is actually saving us time?</div>
+<div style="font-size: 13px; color: #55625F">Anonymous</div>
+<div style="display: flex; align-items: center; gap: 8px"><button aria-label="Remove a dot" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid #C9D3D0; background: #FFFFFF; color: #8A9894; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button><div style="flex: 1; text-align: center; font-size: 13px; color: #55625F">No dots yet</div><button aria-label="Add a dot" style="width: 44px; height: 44px; border-radius: 10px; border: 0; background: #0F766E; color: #FFFFFF; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
+</div>
+
+<div style="border: 1px solid #D5DDDB; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 14px; background: #FFFFFF">
+<div style="font-size: 16px; line-height: 1.35; font-weight: 700">Pairing vs. async code review</div>
+<div style="font-size: 13px; color: #55625F">Leo</div>
+<div style="display: flex; align-items: center; gap: 8px"><button aria-label="Remove a dot" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid #C9D3D0; background: #FFFFFF; color: #8A9894; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button><div style="flex: 1; text-align: center; font-size: 13px; color: #55625F">No dots yet</div><button aria-label="Add a dot" style="width: 44px; height: 44px; border-radius: 10px; border: 0; background: #0F766E; color: #FFFFFF; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
+</div>
+
+<div style="border: 1px dashed #AAB8B4; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 14px; background: #F3F5F4">
+<div style="font-size: 16px; line-height: 1.35; font-weight: 700">Making async updates actually get read</div>
+<div style="display: flex; align-items: center; gap: 8px"><span style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #0F766E; background: #D9F0EC; border-radius: 6px; padding: 4px 8px">Your topic</span></div>
+<div style="font-size: 13px; line-height: 1.4; color: #55625F; min-height: 44px; display: flex; align-items: center">Voting on your own topic is off, so quieter ideas can rise.</div>
+</div>
+
+<div style="border: 1px solid #D5DDDB; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 14px; background: #FFFFFF">
+<div style="font-size: 16px; line-height: 1.35; font-weight: 700">Scope creep on fixed-price projects</div>
+<div style="font-size: 13px; color: #55625F">Sam</div>
+<div style="display: flex; align-items: center; gap: 8px"><button aria-label="Remove a dot" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid #C9D3D0; background: #FFFFFF; color: #8A9894; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button><div style="flex: 1; text-align: center; font-size: 13px; color: #55625F">No dots yet</div><button aria-label="Add a dot" style="width: 44px; height: 44px; border-radius: 10px; border: 0; background: #0F766E; color: #FFFFFF; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
+</div>
+
+<div style="border: 1px solid #D5DDDB; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 14px; background: #FFFFFF">
+<div style="font-size: 16px; line-height: 1.35; font-weight: 700">What does "ready for QA" mean for us?</div>
+<div style="font-size: 13px; color: #55625F">Sam</div>
+<div style="display: flex; align-items: center; gap: 8px"><button aria-label="Remove a dot" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid #C9D3D0; background: #FFFFFF; color: #8A9894; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button><div style="flex: 1; text-align: center; font-size: 13px; color: #55625F">No dots yet</div><button aria-label="Add a dot" style="width: 44px; height: 44px; border-radius: 10px; border: 0; background: #0F766E; color: #FFFFFF; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
+</div>
+
+<div style="border: 1px solid #D5DDDB; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 14px; background: #FFFFFF">
+<div style="font-size: 16px; line-height: 1.35; font-weight: 700">Retro cadence: every sprint or every two?</div>
+<div style="font-size: 13px; color: #55625F">Leo</div>
+<div style="display: flex; align-items: center; gap: 8px"><button aria-label="Remove a dot" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid #C9D3D0; background: #FFFFFF; color: #8A9894; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button><div style="flex: 1; text-align: center; font-size: 13px; color: #55625F">No dots yet</div><button aria-label="Add a dot" style="width: 44px; height: 44px; border-radius: 10px; border: 0; background: #0F766E; color: #FFFFFF; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
+</div>
+
+<div style="border: 1px solid #D5DDDB; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 14px; background: #FFFFFF">
+<div style="font-size: 16px; line-height: 1.35; font-weight: 700">Where should decisions get written down?</div>
+<div style="font-size: 13px; color: #55625F">Ana</div>
+<div style="display: flex; align-items: center; gap: 8px"><button aria-label="Remove a dot" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid #C9D3D0; background: #FFFFFF; color: #8A9894; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button><div style="flex: 1; text-align: center; font-size: 13px; color: #55625F">No dots yet</div><button aria-label="Add a dot" style="width: 44px; height: 44px; border-radius: 10px; border: 0; background: #0F766E; color: #FFFFFF; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
+</div>
+
+</div>
+
+</main>
+
+<!-- Facilitator panel -->
+<aside style="width: 380px; flex: none; background: #F3F5F4; border-left: 1px solid #E1E7E5; padding: 28px 28px 24px; display: flex; flex-direction: column; gap: 22px">
+
+<div style="display: flex; flex-direction: column; gap: 12px">
+<div style="font-size: 13px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #55625F">Voting clock</div>
+<div style="display: flex; align-items: baseline; gap: 10px"><div style="font-size: 52px; line-height: 1; font-weight: 800; letter-spacing: -0.02em; color: #0F766E; font-variant-numeric: tabular-nums">0:42</div><div style="font-size: 14px; color: #55625F">of 1:00</div></div>
+<div style="height: 10px; border-radius: 5px; background: #D5DDDB; overflow: hidden"><div style="width: 30%; height: 100%; background: #0F766E"></div></div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; justify-content: space-between"><div style="font-size: 13px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #55625F">Who has finished</div><div style="font-size: 14px; font-weight: 700">4 of 6</div></div>
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center; justify-content: space-between; font-size: 15px"><span>Maya</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0F766E" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-label="Finished" role="img"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+<div style="display: flex; align-items: center; justify-content: space-between; font-size: 15px"><span>Dev</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0F766E" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-label="Finished" role="img"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+<div style="display: flex; align-items: center; justify-content: space-between; font-size: 15px"><span>Sam</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0F766E" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-label="Finished" role="img"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+<div style="display: flex; align-items: center; justify-content: space-between; font-size: 15px"><span>Leo</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0F766E" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-label="Finished" role="img"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+<div style="display: flex; align-items: center; justify-content: space-between; font-size: 15px; color: #55625F"><span>Priya (you)</span><span style="font-size: 13px">1 dot left</span></div>
+<div style="display: flex; align-items: center; justify-content: space-between; font-size: 15px; color: #55625F"><span>Ana</span><span style="font-size: 13px">Still voting</span></div>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 10px">
+<button style="height: 48px; border-radius: 10px; border: 0; background: #0F766E; color: #FFFFFF; font: 800 16px 'Plus Jakarta Sans', sans-serif">Reveal results now</button>
+<button style="height: 44px; border-radius: 10px; border: 1px solid #0F766E; background: transparent; color: #0F766E; font: 700 15px 'Plus Jakarta Sans', sans-serif">Add 30 seconds</button>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 12px; border-top: 1px solid #D5DDDB; padding-top: 18px">
+<div style="font-size: 13px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #55625F">Session rules</div>
+<div style="display: flex; align-items: center; justify-content: space-between; font-size: 14px"><span>Dots per person</span><span style="font-weight: 700">3</span></div>
+<div style="display: flex; align-items: center; justify-content: space-between; font-size: 14px"><span>Discussion timebox</span><span style="font-weight: 700">5:00</span></div>
+<div style="display: flex; align-items: center; justify-content: space-between; font-size: 14px"><span>Extend by</span><span style="font-weight: 700">3:00</span></div>
+<div style="display: flex; align-items: center; justify-content: space-between; font-size: 14px"><span>Voting on own topic</span><span style="font-weight: 700">Off</span></div>
+</div>
+
+</aside>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>
