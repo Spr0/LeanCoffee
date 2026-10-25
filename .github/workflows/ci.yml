@@ -73,8 +73,18 @@ jobs:
         run: npx supabase db reset
       - name: pgTAP suite
         run: npx supabase test db
-      - name: Database lint
-        run: npx supabase db lint --level warning --fail-on error
+      - name: Database lint (plpgsql_check)
+        run: |
+          set +e
+          npx supabase db lint --level warning --fail-on error > lint.txt 2>&1
+          code=$?
+          cat lint.txt
+          # Surface findings as an annotation so they are readable without log access.
+          if [ -s lint.txt ] && grep -q '"level"' lint.txt; then
+            msg=$(head -c 6000 lint.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+            echo "::warning title=supabase db lint::$msg"
+          fi
+          exit $code
 
   e2e:
     name: End-to-end smoke (Playwright, axe)
