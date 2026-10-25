@@ -64,10 +64,10 @@ Word and Excel files are generated in the browser (`docx`, `exceljs`). CI checks
 
 Netlify builds every push from GitHub (`netlify.toml`): `npm run build`, then `scripts/check-dist-keys.mjs` scans the real bundle for privileged keys. Production is `main`; other branches get branch-deploy previews at `https://<branch>--leancoffee-app.netlify.app` (slashes become dashes).
 
-| Netlify environment variable    | Scopes            | Value                                            |
-| ------------------------------- | ----------------- | ------------------------------------------------ |
-| `VITE_SUPABASE_URL`             | Builds, Functions | `https://dzvfedktsxomnzokeqap.supabase.co`       |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | Builds, Functions | the project's publishable key (public by design) |
+| Netlify environment variable    | Scopes | Value                                            |
+| ------------------------------- | ------ | ------------------------------------------------ |
+| `VITE_SUPABASE_URL`             | All    | `https://dzvfedktsxomnzokeqap.supabase.co`       |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | All    | the project's publishable key (public by design) |
 
 The build fails if `VITE_SUPABASE_URL` is missing, because the security headers (`dist/_headers`) are generated from it.
 
