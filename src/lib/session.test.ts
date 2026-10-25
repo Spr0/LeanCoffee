@@ -1,6 +1,7 @@
 import type { BoardState, ExtendRound, Topic, Vote } from './types'
 import {
   boardMoves,
+  boardTotals,
   discussProgress,
   dotTotals,
   extendedText,
@@ -112,60 +113,125 @@ describe('Discuss board', () => {
   })
 
   it('shrinks the ring, never the type, for a long topic or the extend vote', () => {
-    expect(stageRingSize('x'.repeat(60), false)).toBe(220)
-    expect(stageRingSize('x'.repeat(61), false)).toBe(200)
-    expect(stageRingSize('Short', true)).toBe(200)
+    expect(stageRingSize('x'.repeat(45), false, 300_000)).toBe(220)
+    expect(stageRingSize('x'.repeat(46), false, 300_000)).toBe(200)
+    expect(stageRingSize('x'.repeat(160), false, 300_000)).toBe(200)
+    expect(stageRingSize('Short', true, 300_000)).toBe(200)
+  })
+
+  it('gives a clock of 10:00 or more the 240 px ring, whatever else is on stage', () => {
+    expect(stageRingSize('Short', false, 600_000)).toBe(240)
+    expect(stageRingSize('x'.repeat(160), true, 599_500)).toBe(240)
+    expect(stageRingSize('Short', false, 599_000)).toBe(220)
+  })
+
+  it('keeps the dots that ranked discussed and skipped topics after a re-vote', () => {
+    const votes = [
+      vote('done', 'u1', 4),
+      vote('done', 'u2', 2),
+      vote('skip', 'u1', 1),
+      vote('open', 'u1', 3),
+      vote('open', 'u2', 1, 1),
+    ]
+    const topics = [at('done', 'discussed'), at('skip', 'skipped'), at('open', 'open')]
+    expect(Object.fromEntries(boardTotals(votes, topics, 0))).toEqual({ done: 6, skip: 1, open: 3 })
+    // Round 1 re-voted the open topics only: open ones count it, the others keep round 0.
+    expect(Object.fromEntries(boardTotals(votes, topics, 1))).toEqual({ done: 6, skip: 1, open: 1 })
   })
 
   describe('announcing moves', () => {
-    const round = (topicId: string, result: ExtendRound['result'], counted = true) =>
+    const round = (
+      topicId: string,
+      result: ExtendRound['result'],
+      counts: [number, number, number] | null = [0, 0, 2],
+      closed = true,
+    ) =>
       ({
         id: `r-${topicId}`,
         board_id: 'b',
         topic_id: topicId,
         opened_at: '2026-10-25T10:00:00Z',
         closes_at: '2026-10-25T10:00:15Z',
-        closed_at: '2026-10-25T10:00:15Z',
+        closed_at: closed ? '2026-10-25T10:00:15Z' : null,
         votes_cast: 2,
-        keep_count: counted ? 0 : null,
-        neutral_count: counted ? 0 : null,
-        move_on_count: counted ? 2 : null,
-        result,
+        keep_count: counts?.[0] ?? null,
+        neutral_count: counts?.[1] ?? null,
+        move_on_count: counts?.[2] ?? null,
+        result: closed ? result : null,
       }) satisfies ExtendRound
-    const before = [at('a', 'discussing'), at('b', 'open')]
+    const moment = (topics: Topic[], rounds: ExtendRound[] = []) => ({ topics, rounds })
+    const before = moment([at('a', 'discussing'), at('b', 'open')])
+    const moves = (from: ReturnType<typeof moment>, to: ReturnType<typeof moment>) =>
+      boardMoves(from, to, 180_000)
 
     it('says nothing when nothing moved', () => {
       expect(
-        boardMoves(before, [at('a', 'discussing', { text: 'Renamed' }), at('b', 'open')], []),
+        moves(before, moment([at('a', 'discussing', { text: 'Renamed' }), at('b', 'open')])),
       ).toBe('')
     })
 
     it('says a topic finished and the next started', () => {
       const after = [at('a', 'discussed', { time_spent_ms: 312_000 }), at('b', 'discussing')]
-      expect(boardMoves(before, after, [])).toBe(
+      expect(moves(before, moment(after))).toBe(
         '"a" moved to Discussed after 5:12. Now discussing "b".',
       )
     })
 
     it('says a topic was skipped or deferred', () => {
-      expect(boardMoves(before, [at('a', 'skipped'), at('b', 'open')], [])).toBe('"a" was skipped.')
-      expect(boardMoves(before, [at('a', 'open'), at('b', 'open')], [])).toBe(
+      expect(moves(before, moment([at('a', 'skipped'), at('b', 'open')]))).toBe('"a" was skipped.')
+      expect(moves(before, moment([at('a', 'open'), at('b', 'open')]))).toBe(
         '"a" moved back to the queue for later.',
       )
     })
 
-    it('leaves a Move on vote to its result panel, but not a force-closed round', () => {
-      const after = [at('a', 'discussed'), at('b', 'open')]
-      expect(boardMoves(before, after, [round('a', 'move_on')])).toBe('')
-      expect(boardMoves(before, after, [round('a', 'move_on', false)])).toBe(
-        '"a" moved to Discussed after 0:00.',
+    it('says a Move on vote once, whichever table reloads first', () => {
+      const open = round('a', null, null, false)
+      const voted = round('a', 'move_on', [1, 1, 4])
+      const was = moment(before.topics, [open])
+      const off = [at('a', 'discussed'), at('b', 'open')]
+      const said =
+        'The group chose to move on: "a" moved to Discussed (1 keep going, 1 neutral, 4 move on).'
+      // Both together.
+      expect(moves(was, moment(off, [voted]))).toBe(said)
+      // The vote first, then the topic.
+      expect(moves(was, moment(before.topics, [voted]))).toBe(said)
+      expect(moves(moment(before.topics, [voted]), moment(off, [voted]))).toBe('')
+      // The topic first, while its vote still looks open, then the vote.
+      expect(moves(was, moment(off, [open]))).toBe('')
+      expect(moves(moment(off, [open]), moment(off, [voted]))).toBe(said)
+    })
+
+    it('says a topic taken off stage during a vote, whichever table reloads first', () => {
+      const open = round('a', null, null, false)
+      const forced = round('a', 'move_on', null)
+      const was = moment(before.topics, [open])
+      const off = [at('a', 'discussed', { time_spent_ms: 200_000 }), at('b', 'open')]
+      const said = '"a" moved to Discussed after 3:20.'
+      expect(moves(was, moment(off, [forced]))).toBe(said)
+      expect(moves(was, moment(before.topics, [forced]))).toBe('')
+      expect(moves(moment(before.topics, [forced]), moment(off, [forced]))).toBe(said)
+      expect(moves(was, moment(off, [open]))).toBe('')
+      expect(moves(moment(off, [open]), moment(off, [forced]))).toBe(said)
+    })
+
+    it('says who extended a topic: the group, or the facilitator against the vote', () => {
+      const was = moment(before.topics, [round('a', null, null, false)])
+      expect(moves(was, moment(before.topics, [round('a', 'extend', [3, 0, 1])]))).toBe(
+        'The group chose to keep going on "a": 3:00 added.',
+      )
+      expect(moves(was, moment(before.topics, [round('a', 'extend', [0, 1, 3])]))).toBe(
+        'The facilitator extended "a": 3:00 added.',
       )
     })
 
     it('says when Extend anyway brings a topic back on stage', () => {
-      const was = [at('a', 'discussed'), at('b', 'open')]
-      expect(boardMoves(was, [at('a', 'discussing'), at('b', 'open')], [])).toBe(
-        'Now discussing "a".',
+      const was = moment(
+        [at('a', 'discussed'), at('b', 'open')],
+        [round('a', 'move_on', [0, 1, 3])],
+      )
+      const after = moment(before.topics, [round('a', 'extend', [0, 1, 3])])
+      expect(moves(was, after)).toBe(
+        'The facilitator extended "a": 3:00 added. Now discussing "a".',
       )
     })
   })

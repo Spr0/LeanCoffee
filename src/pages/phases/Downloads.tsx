@@ -78,7 +78,7 @@ export function DownloadsButton({ data }: { data: BoardData }) {
   const [open, setOpen] = useState(false)
   return (
     <>
-      <Button variant="ghost" className="px-3" onClick={() => setOpen(true)}>
+      <Button variant="ghost" className="px-3" aria-haspopup="dialog" onClick={() => setOpen(true)}>
         Downloads
       </Button>
       <Dialog open={open} onClose={() => setOpen(false)} title="Download the results">

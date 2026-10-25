@@ -232,7 +232,7 @@ export function PeopleButton({ ctx }: { ctx: BoardContext }) {
           <Avatar key={p.id} name={p.display_name} />
         ))}
       </span>
-      <Button variant="ghost" className="px-3" onClick={() => setOpen(true)}>
+      <Button variant="ghost" className="px-3" aria-haspopup="dialog" onClick={() => setOpen(true)}>
         {present.length} {present.length === 1 ? 'person' : 'people'}
       </Button>
       <Dialog open={open} onClose={() => setOpen(false)} title="People">

@@ -91,6 +91,8 @@ test('skip and bring back, edit and delete, downloads, owners and the move-on ov
   await fran.getByRole('button', { name: 'Skip', exact: true }).click()
   const skipped = (page: Page) => region(page, 'To discuss').getByRole('list', { name: /^Skipped/ })
   await expect(skipped(pat)).toContainText('Alpha topic')
+  // Its action stays under its card, where anyone can still tick it done.
+  await expect(skipped(pat)).toContainText('Write up the alpha plan · Someone in finance')
   await expect(pat.getByRole('button', { name: /^Bring back/ })).toHaveCount(0)
   await fran.getByRole('button', { name: /Start the .* clock/ }).click()
   await expect(stage(pat)).toContainText('Bravo topic')
@@ -137,7 +139,8 @@ test('skip and bring back, edit and delete, downloads, owners and the move-on ov
   // Bring back puts the skipped topic at the bottom of the queue.
   await skipped(fran).getByRole('button', { name: 'Bring back "Alpha topic"' }).click()
   await expect(skipped(pat)).toHaveCount(0)
-  await expect(region(pat, 'To discuss').getByRole('listitem').last()).toContainText('Alpha topic')
+  const queued = region(pat, 'To discuss').getByRole('list', { name: /^To discuss/ })
+  await expect(queued.locator(':scope > li').last()).toContainText('Alpha topic')
 
   for (const g of guards) g.check()
 })

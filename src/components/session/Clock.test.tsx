@@ -10,14 +10,16 @@ describe('RingTimer', () => {
     expect(screen.getByRole('timer')).toHaveAccessibleName('3 minutes 42 seconds left')
   })
 
-  it('fits ten minutes or more inside a ring under 260 px at 64 px', () => {
+  it('drops to 64 px where 72 px would cross the stroke', () => {
     const { rerender } = render(
-      <RingTimer remaining={600_000} totalMs={600_000} paused={false} size={220} />,
+      <RingTimer remaining={600_000} totalMs={600_000} paused={false} size={240} />,
     )
     expect(digits()).toHaveTextContent('10:00')
     expect(digits()).toHaveClass('text-[64px]')
     rerender(<RingTimer remaining={600_000} totalMs={600_000} paused={false} size={260} />)
     expect(digits()).toHaveClass('text-[72px]')
+    rerender(<RingTimer remaining={222_000} totalMs={300_000} paused={false} size={180} />)
+    expect(digits()).toHaveClass('text-[64px]')
   })
 
   it('says it in words as well as color at a minute left', () => {

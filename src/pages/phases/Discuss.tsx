@@ -5,9 +5,9 @@ import { Button } from '../../components/ui'
 import { chime } from '../../lib/chime'
 import {
   boardMoves,
+  boardTotals,
   cards,
   discussProgress,
-  dotTotals,
   extendOutcome,
   lastRound,
   LONG_TOPIC,
@@ -21,6 +21,7 @@ import { callWhenDue } from '../../lib/retry'
 import { formatClock, isPresent } from '../../lib/time'
 import type { ExtendRound, ExtendVote, Topic } from '../../lib/types'
 import { useAtZero } from '../../state/useCountdown'
+import { useMediaQuery } from '../../state/useMediaQuery'
 import { useNow } from '../../state/useNow'
 import { ActionItem, DiscussedColumn, QueueColumn } from './BoardColumns'
 import { Eyebrow, TimerButtons, type PhaseProps } from './common'
@@ -44,7 +45,9 @@ const CHIP = 'rounded-md bg-surface px-2.5 py-1 text-[14px] font-bold dark:bg-li
 export default function Discuss({ ctx, remaining }: PhaseProps) {
   const { board, state, isFacilitator, act } = ctx
   const { topics, extendRounds } = board.data
-  const [note, setNote] = useState('')
+  // The live line. Each message is a new node, so a repeat (a second extension) is read out too.
+  const [note, setNoteState] = useState({ text: '', n: 0 })
+  const setNote = (text: string) => setNoteState((last) => ({ text, n: last.n + 1 }))
   const now = useNow(1000)
   const nowServer = now + board.offsetMs
   const current = topics.find((t) => t.id === state.current_topic_id)
@@ -53,7 +56,7 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
   const discussed = topics
     .filter((t) => t.status === 'discussed')
     .sort((a, b) => (a.discussed_seq ?? 0) - (b.discussed_seq ?? 0))
-  const totals = dotTotals(board.data.votes, state.base_round)
+  const totals = boardTotals(board.data.votes, topics, state.base_round)
   const round = openRound(extendRounds, state.current_topic_id)
   const last = lastRound(extendRounds, state.current_topic_id)
   const minutesLeft = sessionMinutesLeft(state, nowServer)
@@ -89,12 +92,21 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
     if (round) callWhenDue('resolve_extend_round', { p_round: round.id })
   })
 
-  // One polite line when a topic starts, finishes, is skipped or deferred; never per second.
-  const moveKey = topics.map((t) => `${t.id}:${t.status}`).join()
-  const [seen, setSeen] = useState({ key: moveKey, topics })
+  // One polite line when an extend vote closes, or a topic starts, finishes, is skipped or
+  // deferred; never per second. The panels that show these results are not live regions, as
+  // regions added with their text already in them are read out unreliably.
+  const moveKey = [
+    ...topics.map((t) => `${t.id}:${t.status}`),
+    ...extendRounds.map((r) => `${r.id}:${r.closed_at ? r.result : 'open'}`),
+  ].join()
+  const [seen, setSeen] = useState({ key: moveKey, topics, rounds: extendRounds })
   if (seen.key !== moveKey) {
-    setSeen({ key: moveKey, topics })
-    const message = boardMoves(seen.topics, topics, extendRounds)
+    setSeen({ key: moveKey, topics, rounds: extendRounds })
+    const message = boardMoves(
+      seen,
+      { topics, rounds: extendRounds },
+      state.settings.extend_s * 1000,
+    )
     if (message) setNote(message)
   }
 
@@ -116,6 +128,88 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
     if (focusInStage.current && (active === null || active === document.body))
       heading.current?.focus()
   }, [stageKey])
+
+  // Focus and reading order follow the screen: To discuss, the stage, then Discussed side by side
+  // from 1024 px, and the stage first when the columns stack on a phone.
+  const wide = useMediaQuery('(min-width: 64rem)')
+  const queueColumn = (
+    <div key="queue" className="relative min-w-0">
+      <QueueColumn
+        ctx={ctx}
+        totals={totals}
+        onNote={setNote}
+        className="lg:absolute lg:inset-0 lg:overflow-y-auto"
+      />
+    </div>
+  )
+  const discussedColumn = (
+    <div key="discussed" className="relative min-w-0 lg:col-span-2 xl:col-span-1">
+      <DiscussedColumn
+        ctx={ctx}
+        totals={totals}
+        onNote={setNote}
+        className="xl:absolute xl:inset-0 xl:overflow-y-auto"
+      />
+    </div>
+  )
+  const stageColumn = (
+    <section
+      key="stage"
+      ref={stage}
+      aria-label="Discussing"
+      className="@container min-w-0 rounded-2xl border-2 border-teal bg-panel p-5"
+    >
+      {current ? (
+        <Stage
+          key={current.id}
+          ctx={ctx}
+          topic={current}
+          votes={totals.get(current.id) ?? 0}
+          remaining={remaining}
+          round={round}
+          shownRound={shownRound}
+          roundLeft={roundLeft}
+          heading={heading}
+        />
+      ) : (
+        <>
+          {/* The topic is not repeated here: it is last in Discussed, and the live line names it.
+              That keeps a long Up next topic and its start button on the share. */}
+          {movedOn && (
+            <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border-2 border-teal px-4 py-3">
+              <p className="flex-1 text-[17px]">
+                <b>The group chose to move on.</b> {movedOn.keep_count} keep going,{' '}
+                {movedOn.neutral_count} neutral, {movedOn.move_on_count} move on.
+              </p>
+              {isFacilitator && (
+                <Button
+                  variant="secondary"
+                  onClick={() => act('extend_topic', { p_board: state.board_id })}
+                >
+                  Extend {formatClock(state.settings.extend_s * 1000)} anyway
+                </Button>
+              )}
+            </div>
+          )}
+          <UpNext
+            ctx={ctx}
+            next={queue[0]}
+            votes={queue[0] ? (totals.get(queue[0].id) ?? 0) : 0}
+            skipped={skipped.length}
+            heading={heading}
+          />
+          {lastDiscussed && (
+            <ActionsFor
+              ctx={ctx}
+              topicId={lastDiscussed.id}
+              label="Actions from the last topic"
+              list={false}
+            />
+          )}
+        </>
+      )}
+    </section>
+  )
 
   const elapsed = minutesLeft === null ? 0 : state.planned_minutes - minutesLeft
   return (
@@ -160,11 +254,12 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
         </div>
       </div>
       {minutesLeft !== null && minutesLeft <= 5 && (
+        // One line, so the extend vote and the action form stay on a 720 px share.
         <div
           role="status"
-          className="flex flex-wrap items-center gap-3 rounded-xl border-2 border-urgent p-4"
+          className="flex flex-wrap items-center gap-x-4 rounded-xl border-2 border-urgent px-4 py-1"
         >
-          <p className="flex-1 text-[16px] font-bold">
+          <p className="flex-1 py-2 text-[16px] font-bold">
             About 5 minutes left in the session. Time to wrap up.
           </p>
           {isFacilitator && (
@@ -176,67 +271,15 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
           )}
         </div>
       )}
-      {/* Reading and focus order runs left to right; on a phone the stage comes first. */}
-      <div className="grid flex-1 gap-4 lg:grid-cols-[minmax(250px,1fr)_minmax(0,2.25fr)_minmax(250px,1fr)]">
-        <QueueColumn ctx={ctx} totals={totals} onNote={setNote} />
-        <section
-          ref={stage}
-          aria-label="Discussing"
-          className="@container min-w-0 rounded-2xl border-2 border-teal bg-panel p-5 max-lg:order-first"
-        >
-          {current ? (
-            <Stage
-              key={current.id}
-              ctx={ctx}
-              topic={current}
-              votes={totals.get(current.id) ?? 0}
-              remaining={remaining}
-              round={round}
-              shownRound={shownRound}
-              roundLeft={roundLeft}
-              heading={heading}
-            />
-          ) : (
-            <>
-              {movedOn && lastDiscussed && (
-                <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border-2 border-teal p-4">
-                  <p className="flex-1 text-[17px]" role="status">
-                    <b>The group chose to move on.</b> "{lastDiscussed.text}" is now discussed (
-                    {movedOn.keep_count} keep going, {movedOn.neutral_count} neutral,{' '}
-                    {movedOn.move_on_count} move on).
-                  </p>
-                  {isFacilitator && (
-                    <Button
-                      variant="secondary"
-                      onClick={() => act('extend_topic', { p_board: state.board_id })}
-                    >
-                      Extend {formatClock(state.settings.extend_s * 1000)} anyway
-                    </Button>
-                  )}
-                </div>
-              )}
-              <UpNext
-                ctx={ctx}
-                next={queue[0]}
-                votes={queue[0] ? (totals.get(queue[0].id) ?? 0) : 0}
-                skipped={skipped.length}
-                heading={heading}
-              />
-              {lastDiscussed && (
-                <ActionsFor
-                  ctx={ctx}
-                  topicId={lastDiscussed.id}
-                  label="Actions from the last topic"
-                  list={false}
-                />
-              )}
-            </>
-          )}
-        </section>
-        <DiscussedColumn ctx={ctx} totals={totals} />
+      {/* Beside the stage the side columns are as tall as its row and scroll on their own. Three
+          columns from 1280 px; from 1024 px Discussed runs under To discuss and the stage. */}
+      <div className="grid flex-1 gap-4 lg:grid-cols-[minmax(250px,1fr)_minmax(0,2.25fr)] xl:grid-cols-[minmax(250px,1fr)_minmax(0,2.25fr)_minmax(250px,1fr)]">
+        {wide
+          ? [queueColumn, stageColumn, discussedColumn]
+          : [stageColumn, queueColumn, discussedColumn]}
       </div>
       <p role="status" className="sr-only">
-        {note}
+        <span key={note.n}>{note.text}</span>
       </p>
     </main>
   )
@@ -280,54 +323,70 @@ function Stage({
   )
   const outcome = (p_outcome: 'discussed' | 'deferred' | 'skipped') =>
     act('next_topic', { p_board: state.board_id, p_outcome })
-  return (
+  // A long topic or the extend vote shrinks the ring; the type stays at 44 px.
+  const ring = (
+    <RingTimer
+      remaining={remaining}
+      totalMs={totalMs}
+      paused={state.paused_remaining_ms !== null}
+      size={stageRingSize(topic.text, shownRound !== undefined, totalMs)}
+    />
+  )
+  const chips = (
+    <div className="flex flex-wrap gap-2">
+      <span className="rounded-md bg-teal-soft px-2.5 py-1 text-[14px] font-extrabold tracking-[0.08em] text-teal">
+        DISCUSSING NOW
+      </span>
+      <span className={CHIP}>{plural(votes, 'vote')}</span>
+      {topic.extensions > 0 && <span className={CHIP}>Extended ×{topic.extensions}</span>}
+    </div>
+  )
+  const words = (
     <>
-      <div className="flex flex-wrap gap-2">
-        <span className="rounded-md bg-teal-soft px-2.5 py-1 text-[14px] font-extrabold tracking-[0.08em] text-teal">
-          DISCUSSING NOW
-        </span>
-        <span className={CHIP}>{plural(votes, 'vote')}</span>
-        {topic.extensions > 0 && <span className={CHIP}>Extended ×{topic.extensions}</span>}
-      </div>
-      {/* A long topic or the extend vote shrinks the ring; the type stays at 44 px. Beside a long
-          topic the ring stays at the top, so the time is on screen however far the topic runs. */}
-      <div
-        className={`mt-3 flex flex-wrap justify-between gap-x-6 gap-y-4 ${topic.text.length > LONG_TOPIC ? 'items-start' : 'items-center'}`}
+      <h1
+        ref={heading}
+        tabIndex={-1}
+        className="text-[44px] leading-[1.08] font-extrabold tracking-tight break-words"
       >
-        <div className="min-w-0 grow basis-64">
-          <h1
-            ref={heading}
-            tabIndex={-1}
-            className="text-[44px] leading-[1.08] font-extrabold tracking-tight break-words"
-          >
-            {topic.text}
-          </h1>
-          {editing && (
-            <div className="mt-3">
-              <TopicEditor
-                ctx={ctx}
-                topic={topic}
-                onDone={() => {
-                  refocus.current = true
-                  setEditing(false)
-                }}
-              />
-            </div>
-          )}
-          <p className="mt-2 text-[17px] text-muted">
-            Raised by <b className="text-ink">{topic.author_name}</b>, who starts the conversation
-          </p>
-        </div>
-        {/* Centered when it wraps under the topic, as on a phone. */}
-        <div className="mx-auto">
-          <RingTimer
-            remaining={remaining}
-            totalMs={totalMs}
-            paused={state.paused_remaining_ms !== null}
-            size={stageRingSize(topic.text, shownRound !== undefined)}
+        {topic.text}
+      </h1>
+      {editing && (
+        <div className="mt-3">
+          <TopicEditor
+            ctx={ctx}
+            topic={topic}
+            onDone={() => {
+              refocus.current = true
+              setEditing(false)
+            }}
           />
         </div>
-      </div>
+      )}
+      <p className="mt-2 text-[17px] text-muted">
+        Raised by <b className="text-ink">{topic.author_name}</b>, who starts the conversation
+      </p>
+    </>
+  )
+  return (
+    <>
+      {topic.text.length > LONG_TOPIC ? (
+        // A long topic runs full width under the ring, which floats beside the badges and the
+        // topic's first lines. On a narrow stage the ring goes under the topic instead.
+        <div className="flex flex-col gap-3 @lg:flow-root">
+          <div className="order-last mx-auto @lg:float-right @lg:mb-2 @lg:ml-6">{ring}</div>
+          {chips}
+          <div className="min-w-0 @lg:mt-3">{words}</div>
+        </div>
+      ) : (
+        <>
+          {chips}
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+            <div className="min-w-0 grow basis-64">{words}</div>
+            {/* Centered when it wraps under the topic, as on a phone. */}
+            <div className="mx-auto">{ring}</div>
+          </div>
+        </>
+      )}
       {shownRound && (
         <div className="mt-4">
           <ExtendPanel ctx={ctx} roundId={shownRound.id} roundLeft={roundLeft} />
@@ -495,7 +554,7 @@ function ExtendPanel({
       </div>
       {closed && (
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <p className="flex-1 text-[17px] font-bold" role="status">
+          <p className="flex-1 text-[17px] font-bold">
             {round.result !== 'extend'
               ? 'The group chose to move on.'
               : `${groupExtended ? 'The group chose to keep going' : 'The facilitator extended it'}: ${formatClock(state.settings.extend_s * 1000)} added.`}

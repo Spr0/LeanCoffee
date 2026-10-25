@@ -11,6 +11,9 @@ const SIZES = [
   [1280, 720],
   [1440, 900],
 ] as const
+// A topic near the 160-character limit.
+const LONGEST =
+  'How do we decide which customer requests become roadmap items when sales, support and product all keep different lists and nobody owns the final call on them?'
 const region = (page: Page, name: string) => page.getByRole('region', { name, exact: true })
 const btn = (page: Page, name: string) => page.getByRole('button', { name, exact: true })
 const themeToggle = (page: Page) =>
@@ -168,6 +171,40 @@ test('the Discuss board: progress, stage and history on one screen', async ({ br
   await axeBoth(fran, 'mid-topic, facilitator')
   await axeBoth(pat, 'mid-topic, participant')
 
+  // A long topic shrinks the ring, never the type: the ring floats beside its first lines and the
+  // topic runs full width under it. At 1280 x 720 the whole topic and the clock stay on the share,
+  // and Next topic too up to about 100 characters.
+  let shown = ai
+  for (const text of [LONGEST.slice(0, 100), LONGEST]) {
+    await region(fran, 'Discussing')
+      .getByRole('button', { name: `Edit "${shown}"` })
+      .click()
+    await fran.getByRole('textbox', { name: 'Edit topic' }).fill(text)
+    await fran.getByRole('textbox', { name: 'Edit topic' }).press('Enter')
+    shown = text
+    for (const page of [fran, pat]) {
+      const h1 = page.getByRole('heading', { level: 1 })
+      await expect(h1).toHaveText(text)
+      await page.evaluate(() => window.scrollTo(0, 0))
+      const box = await h1.boundingBox()
+      expect((box?.y ?? 720) + (box?.height ?? 0)).toBeLessThanOrEqual(720)
+      await expect(page.getByRole('timer')).toBeInViewport({ ratio: 1 })
+      const sizes = await legibility(page)
+      expect(sizes.topic).toBeGreaterThanOrEqual(44)
+      expect(sizes.digits).toBeGreaterThanOrEqual(64)
+    }
+    if (text.length <= 100) await expect(btn(fran, 'Next topic')).toBeInViewport({ ratio: 1 })
+    await fran.screenshot({
+      path: `test-results/screens/board-stage/long-${text.length}-facilitator-light-1280x720.png`,
+    })
+  }
+  await region(fran, 'Discussing')
+    .getByRole('button', { name: `Edit "${shown}"` })
+    .click()
+  await fran.getByRole('textbox', { name: 'Edit topic' }).fill(ai)
+  await fran.getByRole('textbox', { name: 'Edit topic' }).press('Enter')
+  await expect(pat.getByRole('heading', { level: 1, name: ai })).toBeVisible()
+
   // Phones: the stage first, then To discuss, then Discussed; nothing scrolls sideways.
   for (const [page, who] of [
     [pat, 'participant'],
@@ -182,10 +219,18 @@ test('the Discuss board: progress, stage and history on one screen', async ({ br
       ),
     )
     expect([...order].sort((a, b) => a - b)).toEqual(order)
+    // Focus and reading order match: the stage comes first in the page as well.
+    const named = () =>
+      page
+        .getByRole('main')
+        .getByRole('region')
+        .evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')))
+    await expect.poll(named).toEqual(['Discussing', 'To discuss', 'Discussed'])
     const path = `test-results/screens/board-stage/phone-${who}-390`
     await page.screenshot({ path: `${path}x844.png` })
     await page.screenshot({ path: `${path}-full.png`, fullPage: true })
     await page.setViewportSize(SHARE)
+    await expect.poll(named).toEqual(['To discuss', 'Discussing', 'Discussed'])
   }
 
   // Participants see the same board with none of the facilitator's controls.
@@ -200,6 +245,10 @@ test('the Discuss board: progress, stage and history on one screen', async ({ br
     /^(Edit|Delete|Move|Bring back) /,
   ])
     await expect(pat.getByRole('button', { name })).toHaveCount(0)
+  // The facilitator can still fix or remove a discussed topic before the files are made.
+  await expect(
+    region(fran, 'Discussed').getByRole('button', { name: `Edit "${onboard}"` }),
+  ).toBeVisible()
 
   // The people dialog: the facilitator's tools; Escape returns focus to the toolbar button.
   await btn(fran, '2 people').click()
@@ -277,7 +326,12 @@ test('the Discuss board: progress, stage and history on one screen', async ({ br
   // Bring back puts the skipped topic at the end of the queue and focus on the queue.
   await queue.getByRole('button', { name: `Bring back "${async}"` }).click()
   await expect(patQueue.getByRole('heading', { name: /^Skipped/ })).toHaveCount(0)
-  await expect(patQueue.getByRole('list').first().getByRole('listitem').last()).toContainText(async)
+  await expect(
+    patQueue
+      .getByRole('list', { name: /^To discuss/ })
+      .locator(':scope > li')
+      .last(),
+  ).toContainText(async)
   await expect(queue.getByRole('list').first()).toBeFocused()
 
   // An early vote where everyone moves on: the result stays between topics, with the

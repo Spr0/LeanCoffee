@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { formatClock } from '../../lib/time'
 import type { BoardState, Phase } from '../../lib/types'
 
@@ -25,10 +26,30 @@ const ORDER: Phase[] = ['brainstorm', 'clarify', 'vote', 'discuss', 'wrapup', 'e
 /** 88 px phase stepper shared by every session screen. */
 export function PhaseStepper({ state, currentHint }: { state: BoardState; currentHint?: string }) {
   const current = ORDER.indexOf(state.phase)
+  // On a phone the steps scroll sideways: the strip then takes a tab stop so keyboard users can
+  // scroll it, and the current step is brought into view.
+  const nav = useRef<HTMLElement>(null)
+  const [scrolls, setScrolls] = useState(false)
+  useEffect(() => {
+    const el = nav.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => setScrolls(el.scrollWidth > el.clientWidth + 1))
+    observer.observe(el)
+    if (el.firstElementChild) observer.observe(el.firstElementChild)
+    return () => observer.disconnect()
+  }, [])
+  useEffect(() => {
+    const el = nav.current
+    const step = el?.querySelector<HTMLElement>('[aria-current="step"]')
+    if (el && step) el.scrollLeft = step.offsetLeft - (el.clientWidth - step.offsetWidth) / 2
+  }, [state.phase, scrolls])
   return (
     // Relative, so the hidden "(done)" labels scroll with the steps instead of widening a phone page.
     <nav
+      ref={nav}
       aria-label="Session progress"
+      // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrolling region needs a tab stop
+      tabIndex={scrolls ? 0 : undefined}
       className="relative shrink-0 overflow-x-auto border-b border-line-soft bg-surface"
     >
       <ol className="flex h-[88px] min-w-max items-center gap-3 px-4 sm:px-10">

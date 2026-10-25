@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Button } from '../../components/ui'
 import { cards, extendedText, formatDuration, plural } from '../../lib/session'
 import type { Action, Topic } from '../../lib/types'
@@ -7,34 +7,56 @@ import { BringBack, DeleteTopicDialog, TOPIC_MAX, TopicEditor } from './TopicToo
 
 // The side columns of the Discuss board. In dark mode --surface equals --panel, so the columns sit
 // on the page ground with a 2 px ring instead, and the cards keep their edge.
-const COLUMN =
-  'flex min-w-0 flex-col rounded-2xl bg-surface p-3 dark:bg-ground dark:ring-2 dark:ring-line'
+const COLUMN = 'min-w-0 rounded-2xl bg-surface p-3 dark:bg-ground dark:ring-2 dark:ring-line'
 
 /**
- * Left column, To discuss: the queue with Up next first, the parking lot, then Skipped. The
- * facilitator reorders, edits, deletes and brings skipped topics back from here.
+ * A side column. `className` lets it fill its grid cell and scroll on its own beside the stage, so
+ * reaching the parking lot or an old topic leaves the topic and the timer on the share. While it
+ * scrolls it takes a tab stop, so keyboard users can scroll it too.
  */
-export function QueueColumn({
-  ctx,
-  totals,
-  onNote,
+function Column({
+  label,
+  className,
+  children,
 }: {
-  ctx: PhaseProps['ctx']
-  totals: Map<string, number>
-  onNote: (message: string) => void
+  label: string
+  className: string
+  children: ReactNode
 }) {
-  const { board, state, act } = ctx
-  const all = cards(board.data.topics)
-  const queue = all.filter((t) => t.status === 'open')
-  const skipped = all.filter((t) => t.status === 'skipped')
+  const ref = useRef<HTMLElement>(null)
+  const [scrolls, setScrolls] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => setScrolls(el.scrollHeight > el.clientHeight + 1))
+    observer.observe(el)
+    if (el.firstElementChild) observer.observe(el.firstElementChild)
+    return () => observer.disconnect()
+  }, [])
+  return (
+    <section
+      ref={ref}
+      aria-label={label}
+      // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrolling region needs a tab stop
+      tabIndex={scrolls ? 0 : undefined}
+      className={`${COLUMN} ${className}`}
+    >
+      <div className="flex flex-col">{children}</div>
+    </section>
+  )
+}
+
+/**
+ * The open editor and the delete dialog for a column's cards. An editor left open on a card that
+ * leaves the column closes, so it cannot reopen later and take focus. After a delete the card's
+ * button is gone, so focus moves to the column heading; this runs after the dialog has closed
+ * (child effects first), which would otherwise hand focus back to that button.
+ */
+function useCardTools(here: Topic[]) {
   const [editing, setEditing] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<Topic | null>(null)
+  if (editing !== null && !here.some((t) => t.id === editing)) setEditing(null)
   const heading = useRef<HTMLHeadingElement>(null)
-  const list = useRef<HTMLOListElement>(null)
-  const headingId = useId()
-  const skippedId = useId()
-  // The deleted card's button is gone, so focus moves to the heading. This runs after the dialog
-  // has closed (child effects first), which would otherwise hand focus back to that button.
   const focusHeading = useRef(false)
   useEffect(() => {
     if (deleting === null && focusHeading.current) {
@@ -42,6 +64,55 @@ export function QueueColumn({
       heading.current?.focus()
     }
   }, [deleting])
+  const afterDelete = () => {
+    focusHeading.current = true
+  }
+  return { editing, setEditing, deleting, setDeleting, heading, afterDelete }
+}
+
+/** Save, Cancel and Escape put focus back on the card's Edit button; opening another editor does not. */
+function useEditFocus(editing: boolean) {
+  const editId = useId()
+  const refocus = useRef(false)
+  useEffect(() => {
+    if (!editing && refocus.current) {
+      refocus.current = false
+      document.getElementById(editId)?.focus()
+    }
+  }, [editing, editId])
+  const closing = () => {
+    refocus.current = true
+  }
+  return { editId, closing }
+}
+
+/**
+ * Left column, To discuss: the queue with Up next first, the parking lot, then Skipped. The
+ * facilitator reorders, edits, deletes and brings skipped topics back from here. Actions from a
+ * deferred or skipped topic stay under its card.
+ */
+export function QueueColumn({
+  ctx,
+  totals,
+  onNote,
+  className = '',
+}: {
+  ctx: PhaseProps['ctx']
+  totals: Map<string, number>
+  onNote: (message: string) => void
+  className?: string
+}) {
+  const { board, state, act } = ctx
+  const all = cards(board.data.topics)
+  const queue = all.filter((t) => t.status === 'open')
+  const skipped = all.filter((t) => t.status === 'skipped')
+  const { editing, setEditing, deleting, setDeleting, heading, afterDelete } = useCardTools([
+    ...queue,
+    ...skipped,
+  ])
+  const list = useRef<HTMLOListElement>(null)
+  const headingId = useId()
+  const skippedId = useId()
 
   const moveUp = (i: number) => {
     const ids = queue.map((q) => q.id)
@@ -55,9 +126,10 @@ export function QueueColumn({
     list.current?.focus()
   }
   const shared = { ctx, onEdit: setEditing, onDelete: setDeleting }
+  const own = (t: Topic) => board.data.actions.filter((a) => a.topic_id === t.id)
 
   return (
-    <section aria-label="To discuss" className={COLUMN}>
+    <Column label="To discuss" className={className}>
       <h2
         ref={heading}
         id={headingId}
@@ -73,6 +145,7 @@ export function QueueColumn({
             {...shared}
             topic={t}
             votes={totals.get(t.id) ?? 0}
+            actions={own(t)}
             editing={editing === t.id}
             first={i === 0}
             onUp={() => moveUp(i)}
@@ -95,6 +168,7 @@ export function QueueColumn({
                 {...shared}
                 topic={t}
                 votes={totals.get(t.id) ?? 0}
+                actions={own(t)}
                 editing={editing === t.id}
                 onBack={broughtBack}
               />
@@ -107,11 +181,11 @@ export function QueueColumn({
         topic={deleting}
         onClose={() => setDeleting(null)}
         onDeleted={(message) => {
-          focusHeading.current = true
+          afterDelete()
           onNote(message)
         }}
       />
-    </section>
+    </Column>
   )
 }
 
@@ -119,42 +193,25 @@ interface CardProps {
   ctx: PhaseProps['ctx']
   topic: Topic
   votes: number
+  actions: Action[]
   editing: boolean
   onEdit: (id: string | null) => void
   onDelete: (t: Topic) => void
-  first?: boolean
-  onUp?: () => void
-  onBack?: (message: string) => void
 }
 
-/** A card in To discuss: Up next is marked in words and a darker edge, skipped by a dashed one. */
-function TopicCard({
-  ctx,
+/** The facilitator's Edit and Delete on a card, named for the topic. */
+function CardTools({
   topic: t,
-  votes,
-  editing,
+  editId,
   onEdit,
   onDelete,
-  first = false,
-  onUp,
-  onBack,
-}: CardProps) {
-  const editId = useId()
-  // Save, Cancel and Escape put focus back on the Edit button; opening another editor does not.
-  const refocus = useRef(false)
-  useEffect(() => {
-    if (!editing && refocus.current) {
-      refocus.current = false
-      document.getElementById(editId)?.focus()
-    }
-  }, [editing, editId])
-  const skipped = t.status === 'skipped'
-  const tools = (
+}: Pick<CardProps, 'topic' | 'onEdit' | 'onDelete'> & { editId: string }) {
+  return (
     <>
       <Button
         id={editId}
         variant="ghost"
-        className="px-3"
+        className="min-w-0 px-3"
         aria-label={`Edit "${t.text}"`}
         onClick={() => onEdit(t.id)}
       >
@@ -162,7 +219,7 @@ function TopicCard({
       </Button>
       <Button
         variant="ghost"
-        className="px-3"
+        className="min-w-0 px-3"
         aria-label={`Delete "${t.text}"`}
         onClick={() => onDelete(t)}
       >
@@ -170,6 +227,24 @@ function TopicCard({
       </Button>
     </>
   )
+}
+
+/** A card in To discuss: Up next is marked in words and a darker edge, skipped by a dashed one. */
+function TopicCard({
+  ctx,
+  topic: t,
+  votes,
+  actions,
+  editing,
+  onEdit,
+  onDelete,
+  first = false,
+  onUp,
+  onBack,
+}: CardProps & { first?: boolean; onUp?: () => void; onBack?: (message: string) => void }) {
+  const { editId, closing } = useEditFocus(editing)
+  const skipped = t.status === 'skipped'
+  const tools = <CardTools topic={t} editId={editId} onEdit={onEdit} onDelete={onDelete} />
   return (
     <li
       className={`rounded-xl border-2 bg-panel p-3 ${skipped ? 'border-dashed border-line' : first ? 'border-line-strong' : 'border-line-soft'}`}
@@ -179,7 +254,7 @@ function TopicCard({
           ctx={ctx}
           topic={t}
           onDone={() => {
-            refocus.current = true
+            closing()
             onEdit(null)
           }}
         />
@@ -201,13 +276,14 @@ function TopicCard({
                 {tools}
               </div>
             ) : (
-              <div className="mt-2 flex gap-2">
+              <div className="mt-2 grid grid-cols-[44px_1fr_1fr] gap-2">
+                {/* Not disabled at the top: the button keeps focus when its card gets there. */}
                 <button
                   type="button"
-                  className="size-11 shrink-0 rounded-lg border-2 border-line font-bold disabled:opacity-30"
-                  disabled={first}
+                  className="size-11 rounded-lg border-2 border-line font-bold aria-disabled:cursor-not-allowed aria-disabled:opacity-30"
+                  aria-disabled={first || undefined}
                   aria-label={`Move "${t.text}" up`}
-                  onClick={onUp}
+                  onClick={first ? undefined : onUp}
                 >
                   ↑
                 </button>
@@ -216,6 +292,7 @@ function TopicCard({
             ))}
         </>
       )}
+      <ActionList ctx={ctx} topic={t} actions={actions} />
     </li>
   )
 }
@@ -255,22 +332,35 @@ function ParkingLot({ ctx }: { ctx: PhaseProps['ctx'] }) {
   )
 }
 
-/** Right column, Discussed: finished topics in order with time and votes, actions underneath. */
+/**
+ * Right column, Discussed: finished topics in order with time and votes, actions underneath, and
+ * any actions left without a topic by a delete. The facilitator can still fix or remove a topic
+ * here before the Word and Excel files are made.
+ */
 export function DiscussedColumn({
   ctx,
   totals,
+  onNote,
+  className = '',
 }: {
   ctx: PhaseProps['ctx']
   totals: Map<string, number>
+  onNote: (message: string) => void
+  className?: string
 }) {
   const { topics, actions } = ctx.board.data
   const discussed = topics
     .filter((t) => t.status === 'discussed')
     .sort((a, b) => (a.discussed_seq ?? 0) - (b.discussed_seq ?? 0))
+  const { editing, setEditing, deleting, setDeleting, heading, afterDelete } =
+    useCardTools(discussed)
+  const onBoard = new Set(cards(topics).map((t) => t.id))
+  const others = actions.filter((a) => a.topic_id === null || !onBoard.has(a.topic_id))
+  const othersId = useId()
   const spent = discussed.reduce((ms, t) => ms + t.time_spent_ms, 0)
   return (
-    <section aria-label="Discussed" className={COLUMN}>
-      <h2 className="flex justify-between px-1 text-[17px] font-bold">
+    <Column label="Discussed" className={className}>
+      <h2 ref={heading} tabIndex={-1} className="flex justify-between px-1 text-[17px] font-bold">
         Discussed <span className="text-muted">{discussed.length}</span>
       </h2>
       {discussed.length === 0 ? (
@@ -278,48 +368,123 @@ export function DiscussedColumn({
           Topics move here once discussed, with their time and the actions that came out of them.
         </p>
       ) : (
+        // Two across when the column runs under the stage, between 1024 and 1280 px.
+        <ol className="mt-2 grid gap-2 lg:max-xl:grid-cols-2">
+          {discussed.map((t) => (
+            <DiscussedCard
+              key={t.id}
+              ctx={ctx}
+              topic={t}
+              votes={totals.get(t.id) ?? 0}
+              actions={actions.filter((a) => a.topic_id === t.id)}
+              editing={editing === t.id}
+              onEdit={setEditing}
+              onDelete={setDeleting}
+            />
+          ))}
+        </ol>
+      )}
+      {others.length > 0 && (
         <>
-          <ol className="mt-2 flex flex-col gap-2">
-            {discussed.map((t) => {
-              const own = actions.filter((a) => a.topic_id === t.id)
-              return (
-                <li key={t.id} className="rounded-xl border-2 border-line-soft bg-panel p-3">
-                  <div className="flex items-start gap-2">
-                    <span className="mt-0.5 shrink-0">
-                      <Check />
-                    </span>
-                    <p className="min-w-0 flex-1 text-[15px] leading-snug font-bold break-words">
-                      {t.text}
-                    </p>
-                  </div>
-                  <p className="mt-1 pl-[26px] text-[13px] text-muted">
-                    <b className="text-ink">{formatDuration(t.time_spent_ms)}</b> ·{' '}
-                    {plural(totals.get(t.id) ?? 0, 'vote')}
-                    {t.extensions > 0 && ` · ${extendedText(t.extensions)}`}
-                  </p>
-                  {own.length > 0 && (
-                    <ul
-                      aria-label={`Actions from "${t.text}"`}
-                      className="mt-2 flex flex-col border-t-2 border-line-soft pt-1"
-                    >
-                      {own.map((a) => (
-                        <li key={a.id}>
-                          <ActionItem ctx={ctx} action={a} compact />
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-              )
-            })}
-          </ol>
-          <p className="mt-3 px-1 text-[14px] text-muted">
-            <b className="text-ink">{formatDuration(spent)}</b> discussed so far ·{' '}
-            <b className="text-ink">{plural(actions.length, 'action')}</b> in all
-          </p>
+          <h3
+            id={othersId}
+            className="mt-4 flex justify-between px-1 text-[15px] font-bold text-muted"
+          >
+            Other actions <span>{others.length}</span>
+          </h3>
+          <ul
+            aria-labelledby={othersId}
+            className="mt-2 flex flex-col rounded-xl border-2 border-line-soft bg-panel px-3 py-1"
+          >
+            {others.map((a) => (
+              <li key={a.id}>
+                <ActionItem ctx={ctx} action={a} compact />
+              </li>
+            ))}
+          </ul>
         </>
       )}
-    </section>
+      {discussed.length > 0 && (
+        <p className="mt-3 px-1 text-[14px] text-muted">
+          <b className="text-ink">{formatDuration(spent)}</b> discussed so far ·{' '}
+          <b className="text-ink">{plural(actions.length, 'action')}</b> in all
+        </p>
+      )}
+      <DeleteTopicDialog
+        ctx={ctx}
+        topic={deleting}
+        onClose={() => setDeleting(null)}
+        onDeleted={(message) => {
+          afterDelete()
+          onNote(message)
+        }}
+      />
+    </Column>
+  )
+}
+
+/** A card in Discussed: a check and the time say it is done, not color alone. */
+function DiscussedCard({ ctx, topic: t, votes, actions, editing, onEdit, onDelete }: CardProps) {
+  const { editId, closing } = useEditFocus(editing)
+  return (
+    <li className="rounded-xl border-2 border-line-soft bg-panel p-3">
+      {editing ? (
+        <TopicEditor
+          ctx={ctx}
+          topic={t}
+          onDone={() => {
+            closing()
+            onEdit(null)
+          }}
+        />
+      ) : (
+        <>
+          <div className="flex items-start gap-2">
+            <span className="mt-0.5 shrink-0">
+              <Check />
+            </span>
+            <p className="min-w-0 flex-1 text-[15px] leading-snug font-bold break-words">
+              {t.text}
+            </p>
+          </div>
+          <p className="mt-1 pl-[26px] text-[13px] text-muted">
+            <b className="text-ink">{formatDuration(t.time_spent_ms)}</b> · {plural(votes, 'vote')}
+            {t.extensions > 0 && ` · ${extendedText(t.extensions)}`}
+          </p>
+          {ctx.isFacilitator && (
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <CardTools topic={t} editId={editId} onEdit={onEdit} onDelete={onDelete} />
+            </div>
+          )}
+        </>
+      )}
+      <ActionList ctx={ctx} topic={t} actions={actions} />
+    </li>
+  )
+}
+
+/** A topic's actions under its card, each with its done box. */
+function ActionList({
+  ctx,
+  topic,
+  actions,
+}: {
+  ctx: PhaseProps['ctx']
+  topic: Topic
+  actions: Action[]
+}) {
+  if (actions.length === 0) return null
+  return (
+    <ul
+      aria-label={`Actions from "${topic.text}"`}
+      className="mt-2 flex flex-col border-t-2 border-line-soft pt-1"
+    >
+      {actions.map((a) => (
+        <li key={a.id}>
+          <ActionItem ctx={ctx} action={a} compact />
+        </li>
+      ))}
+    </ul>
   )
 }
 

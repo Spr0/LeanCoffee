@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { Action } from '../../lib/types'
+import type { Action, Topic } from '../../lib/types'
 import { DiscussedColumn, QueueColumn } from './BoardColumns'
 import { makeCtx, makeTopic } from './testBoard'
 
@@ -13,13 +13,39 @@ const TOPICS = [
   makeTopic('t5', 'Later topic', 'open', 5),
 ]
 
-function queue(userId = 'u1', over = {}) {
+const action = (
+  id: string,
+  topic: string | null,
+  text: string,
+  owner: string | null,
+  done = false,
+) =>
+  ({
+    id,
+    board_id: 'b1',
+    topic_id: topic,
+    text,
+    owner_name: owner,
+    created_by: 'u2',
+    done,
+    created_at: '2026-10-25T10:00:00Z',
+  }) satisfies Action
+
+function queue(userId = 'u1', over = {}, topics: Topic[] = TOPICS, actions: Action[] = []) {
   const act = vi.fn(async () => true)
   const onNote = vi.fn()
-  render(
-    <QueueColumn ctx={makeCtx(userId, TOPICS, act, over)} totals={new Map()} onNote={onNote} />,
-  )
-  return { act, onNote, user: userEvent.setup() }
+  const column = (list: Topic[]) => {
+    const ctx = makeCtx(userId, list, act, over)
+    ctx.board.data.actions = actions
+    return <QueueColumn ctx={ctx} totals={new Map()} onNote={onNote} />
+  }
+  const view = render(column(topics))
+  return {
+    act,
+    onNote,
+    user: userEvent.setup(),
+    rerender: (t: Topic[]) => view.rerender(column(t)),
+  }
 }
 
 describe('QueueColumn', () => {
@@ -55,10 +81,43 @@ describe('QueueColumn', () => {
   })
 
   it('moves a topic up the queue; Up next has no move', async () => {
-    const { act, user } = queue()
-    expect(screen.getByRole('button', { name: 'Move "Open topic" up' })).toBeDisabled()
+    const { act, user, rerender } = queue()
+    const top = screen.getByRole('button', { name: 'Move "Open topic" up' })
+    expect(top).toHaveAttribute('aria-disabled', 'true')
+    await user.click(top)
+    expect(act).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Move "Later topic" up' }))
     expect(act).toHaveBeenCalledWith('reorder_topics', { p_board: 'b1', p_ids: ['t5', 't1'] })
+    // At the top its button stays in place, so focus is not lost.
+    rerender(TOPICS.map((t) => (t.id === 't5' ? { ...t, sort_order: 0 } : t)))
+    const moved = screen.getByRole('button', { name: 'Move "Later topic" up' })
+    expect(moved).toHaveFocus()
+    expect(moved).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('closes an editor whose card leaves the queue, so it does not reopen later', async () => {
+    const { user, rerender } = queue()
+    await user.click(screen.getByRole('button', { name: 'Edit "Open topic"' }))
+    expect(screen.getByRole('textbox', { name: 'Edit topic' })).toHaveFocus()
+    const status = (s: Topic['status']) =>
+      TOPICS.map((t) => (t.id === 't1' ? { ...t, status: s } : t))
+    rerender(status('discussing'))
+    rerender(status('skipped'))
+    expect(screen.queryByRole('textbox', { name: 'Edit topic' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Edit "Open topic"' })).not.toHaveFocus()
+  })
+
+  it('keeps actions from a deferred or skipped topic under its card', () => {
+    queue('u2', {}, TOPICS, [
+      action('a1', 't4', 'From the skipped topic', 'Maya'),
+      action('a2', 't5', 'From the deferred topic', null),
+    ])
+    expect(screen.getByRole('list', { name: 'Actions from "Skipped topic"' })).toHaveTextContent(
+      'From the skipped topic · Maya',
+    )
+    expect(
+      screen.getByRole('checkbox', { name: 'Done: From the deferred topic' }),
+    ).toBeInTheDocument()
   })
 
   it('offers Edit and Delete on every queued and skipped card', () => {
@@ -121,21 +180,10 @@ describe('QueueColumn', () => {
   })
 })
 
-const action = (id: string, topic: string, text: string, owner: string | null, done = false) =>
-  ({
-    id,
-    board_id: 'b1',
-    topic_id: topic,
-    text,
-    owner_name: owner,
-    created_by: 'u2',
-    done,
-    created_at: '2026-10-25T10:00:00Z',
-  }) satisfies Action
-
 describe('DiscussedColumn', () => {
-  function discussed(userId = 'u2') {
+  function discussed(userId = 'u2', extra: Action[] = []) {
     const act = vi.fn(async () => true)
+    const onNote = vi.fn()
     const topics = [
       { ...makeTopic('t1', 'First done', 'discussed', 2), time_spent_ms: 420_000 },
       { ...makeTopic('t2', 'Second done', 'discussed', 1), time_spent_ms: 580_000, extensions: 1 },
@@ -146,9 +194,10 @@ describe('DiscussedColumn', () => {
       action('a1', 't1', 'Draft a checklist', 'Maya'),
       action('a2', 't3', 'From the stage', null),
       action('a3', 't2', 'Trial a format', null, true),
+      ...extra,
     ]
-    render(<DiscussedColumn ctx={ctx} totals={new Map([['t1', 6]])} />)
-    return { act, user: userEvent.setup() }
+    render(<DiscussedColumn ctx={ctx} totals={new Map([['t1', 6]])} onNote={onNote} />)
+    return { act, onNote, user: userEvent.setup() }
   }
 
   it('lists discussed topics in order with time, votes, extensions and actions', () => {
@@ -178,11 +227,38 @@ describe('DiscussedColumn', () => {
     expect(act).toHaveBeenCalledWith('toggle_action', { p_action: 'a1', p_done: true })
   })
 
+  it('lists actions left without a topic by a delete, and counts them in the total', () => {
+    discussed('u2', [action('a4', null, 'From a deleted topic', 'Leo')])
+    const others = screen.getByRole('list', { name: 'Other actions 1' })
+    expect(others).toHaveTextContent('From a deleted topic · Leo')
+    expect(screen.getByRole('region', { name: 'Discussed' })).toHaveTextContent('4 actions in all')
+  })
+
+  it('lets the facilitator edit and delete a discussed topic; participants cannot', async () => {
+    const { act, onNote, user } = discussed('u1')
+    await user.click(screen.getByRole('button', { name: 'Edit "First done"' }))
+    await user.type(screen.getByRole('textbox', { name: 'Edit topic' }), ', fixed{Enter}')
+    expect(act).toHaveBeenCalledWith('edit_topic', { p_topic: 't1', p_text: 'First done, fixed' })
+    expect(screen.getByRole('button', { name: 'Edit "First done"' })).toHaveFocus()
+
+    await user.click(screen.getByRole('button', { name: 'Delete "Second done"' }))
+    await user.click(screen.getByRole('button', { name: 'Delete topic' }))
+    expect(act).toHaveBeenCalledWith('delete_topic', { p_topic: 't2' })
+    expect(onNote).toHaveBeenCalledWith('"Second done" was deleted.')
+    expect(screen.getByRole('heading', { level: 2, name: 'Discussed 2' })).toHaveFocus()
+  })
+
+  it('gives participants no edit or delete on discussed topics', () => {
+    discussed('u2')
+    expect(screen.queryByRole('button', { name: /^(Edit|Delete) "/ })).toBeNull()
+  })
+
   it('explains the column before anything is discussed', () => {
     render(
       <DiscussedColumn
         ctx={makeCtx('u2', [makeTopic('t1', 'Open', 'open')], vi.fn())}
         totals={new Map()}
+        onNote={vi.fn()}
       />,
     )
     expect(screen.getByRole('region', { name: 'Discussed' })).toHaveTextContent(

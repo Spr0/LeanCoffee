@@ -1,12 +1,19 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { chime } from '../../lib/chime'
+import { callWhenDue } from '../../lib/retry'
 import Discuss from './Discuss'
 import { makeCtx, makeTopic } from './testBoard'
 import WrapUp from './WrapUp'
-import type { BoardState, ExtendRound, Topic } from '../../lib/types'
+import type { BoardState, ExtendRound, Topic, Vote } from '../../lib/types'
 
-// The clock-at-zero helpers call the server; nothing here reaches zero.
+// The clock-at-zero helpers call the server and play the chime; both are watched, not run.
 vi.mock('../../lib/retry', () => ({ callWhenDue: vi.fn() }))
+vi.mock('../../lib/chime', async (load) => ({
+  ...(await load<typeof import('../../lib/chime')>()),
+  chime: vi.fn(),
+}))
+afterEach(() => vi.clearAllMocks())
 
 const ends = () => new Date(Date.now() + 120_000).toISOString()
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString()
@@ -75,6 +82,61 @@ describe('Discuss board', () => {
     const reminder = screen.getByText('About 5 minutes left in the session. Time to wrap up.')
     expect(reminder.closest('[role="status"]')).not.toBeNull()
     expect(screen.getAllByRole('button', { name: 'Start wrap-up' })).toHaveLength(1)
+  })
+
+  it('shows participants the wrap-up reminder without its button', () => {
+    setup('u2', 'discussing', [], { started_at: minutesAgo(71) })
+    expect(
+      screen.getByText('About 5 minutes left in the session. Time to wrap up.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Start wrap-up' })).toBeNull()
+  })
+
+  it('chimes and asks the server for the extend vote when the clock reaches zero', () => {
+    const ctx = makeCtx('u2', board(), vi.fn(), { phase_ends_at: ends() })
+    render(<Discuss ctx={ctx} remaining={0} />)
+    expect(chime).toHaveBeenCalledTimes(1)
+    expect(callWhenDue).toHaveBeenCalledWith('open_extend_round', { p_board: 'b1' })
+  })
+
+  it('asks the server to resolve the extend vote when its 15 seconds are up', () => {
+    const due = { ...round(0, 0, null), closed_at: null, keep_count: null }
+    setup('u2', 'discussing', [{ ...due, closes_at: new Date(Date.now() - 1000).toISOString() }])
+    expect(callWhenDue).toHaveBeenCalledWith('resolve_extend_round', { p_round: 'r1' })
+    expect(callWhenDue).not.toHaveBeenCalledWith('open_extend_round', expect.anything())
+  })
+
+  it('stacks the stage first on a phone, so focus and reading order match the screen', () => {
+    const matchMedia = vi.fn(() => ({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+    vi.stubGlobal('matchMedia', matchMedia)
+    setup('u2')
+    expect(
+      within(screen.getByRole('main'))
+        .getAllByRole('region')
+        .map((r) => r.getAttribute('aria-label')),
+    ).toEqual(['Discussing', 'To discuss', 'Discussed'])
+    expect(matchMedia).toHaveBeenCalledWith('(min-width: 64rem)')
+    vi.unstubAllGlobals()
+  })
+
+  it('keeps the dots a discussed topic got before a re-vote', () => {
+    const { ctx, view } = setup('u2', 'discussed', [], { base_round: 1 })
+    const dots = (topic_id: string, round: number, n: number): Vote => ({
+      id: `${topic_id}${round}`,
+      board_id: 'b1',
+      topic_id,
+      user_id: 'u1',
+      round,
+      dots: n,
+    })
+    ctx.board.data.votes = [dots('t1', 0, 3), dots('t2', 0, 2), dots('t2', 1, 1)]
+    view.rerender(<Discuss ctx={{ ...ctx }} remaining={null} />)
+    expect(screen.getByRole('region', { name: 'Discussed' })).toHaveTextContent('3 votes')
+    expect(screen.getByRole('region', { name: 'To discuss' })).toHaveTextContent('Pat · 1 vote')
   })
 
   it('gives the facilitator the stage controls, and participants none', () => {
@@ -177,6 +239,15 @@ describe('Discuss board', () => {
     expect(screen.getByRole('timer')).toHaveStyle({ width: '220px' })
   })
 
+  it('makes room in the ring for a clock of 10:00 or more', () => {
+    const act = vi.fn(async () => true)
+    const ctx = makeCtx('u2', board(), act, { phase_ends_at: ends() })
+    ctx.state.settings = { ...ctx.state.settings, discuss_s: 600 }
+    render(<Discuss ctx={ctx} remaining={600_000} />)
+    expect(screen.getByRole('timer')).toHaveStyle({ width: '240px' })
+    expect(screen.getByText('10:00')).toHaveClass('text-[64px]')
+  })
+
   it('opens the people dialog from the toolbar', async () => {
     const { user } = setup('u1')
     await user.click(screen.getByRole('button', { name: '2 people' }))
@@ -238,7 +309,7 @@ describe('Discuss board', () => {
     expect(screen.getByText(/moved to Discussed after/)).toHaveTextContent(
       '"On stage" moved to Discussed after 5:00. Now discussing "Next up".',
     )
-    expect(screen.getByText(/moved to Discussed after/)).toHaveAttribute('role', 'status')
+    expect(screen.getByText(/moved to Discussed after/).closest('[role="status"]')).not.toBeNull()
   })
 })
 
@@ -272,6 +343,50 @@ describe('Discuss extend vote', () => {
   it('says when the group chose to keep going', () => {
     setup('u2', 'discussing', [round(2, 0, 'extend')])
     expect(screen.getByText('The group chose to keep going: 3:00 added.')).toBeInTheDocument()
+  })
+
+  it('reads out a second extension too, though its words are the same', () => {
+    const open = (id: string) => ({ ...round(0, 0, null), id, closed_at: null, keep_count: null })
+    const kept = (id: string) => ({ ...round(3, 1, 'extend'), id })
+    const { ctx, view } = setup('u2', 'discussing', [open('r1')])
+    const show = (rounds: ExtendRound[]) => {
+      const next = makeCtx('u2', board(), ctx.act, { phase_ends_at: ends() })
+      next.board.data.extendRounds = rounds
+      view.rerender(<Discuss ctx={next} remaining={120_000} />)
+    }
+    const said = 'The group chose to keep going on "On stage": 3:00 added.'
+    show([kept('r1')])
+    const first = screen.getByText(said)
+    show([kept('r1'), open('r2')])
+    show([kept('r1'), kept('r2')])
+    expect(screen.getByText(said)).not.toBe(first)
+  })
+
+  it('hides Call vote now while the vote is open', () => {
+    setup('u1', 'discussing', [{ ...round(0, 0, null), closed_at: null, keep_count: null }])
+    expect(screen.getByRole('button', { name: 'Next topic' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Call vote now' })).toBeNull()
+  })
+
+  it('announces a Move on vote once, in the live line, not in the panels', () => {
+    const open = { ...round(0, 0, null), closed_at: null, keep_count: null }
+    const { ctx, view } = setup('u2', 'discussing', [open])
+    const show = (topics: Topic[], rounds: ExtendRound[]) => {
+      const next = makeCtx('u2', topics, ctx.act, { phase_ends_at: null })
+      next.board.data.extendRounds = rounds
+      view.rerender(<Discuss ctx={next} remaining={null} />)
+    }
+    // Topics reload before the closed vote, as realtime may deliver them.
+    show(board('discussed'), [open])
+    show(board('discussed'), [round(1, 4, 'move_on')])
+    const live = screen
+      .getAllByRole('status')
+      .map((s) => s.textContent)
+      .filter(Boolean)
+    expect(live).toEqual([
+      'The group chose to move on: "On stage" moved to Discussed (1 keep going, 0 neutral, 4 move on).',
+    ])
+    expect(screen.getByText('The group chose to move on.')).toBeVisible()
   })
 
   it('says when the facilitator extended against the vote', () => {

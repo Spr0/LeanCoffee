@@ -164,7 +164,7 @@ test('six people run a whole session', async ({ browser }) => {
         .getByRole('button', { name: i < 4 ? 'Keep going' : 'Move on' })
         .click()
     }
-    await expect(pat.getByText(/The group chose to keep going/)).toBeVisible()
+    await expect(pat.getByText(/^The group chose to keep going: /)).toBeVisible()
     await expect(pat.getByText(`Extended ×${extension}`)).toBeVisible()
   }
   await pat.getByLabel('New action').fill('Draft a two-week onboarding checklist')

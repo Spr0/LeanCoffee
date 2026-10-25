@@ -79,8 +79,9 @@ export function ClockPanel({
 
 /**
  * Stage ring timer, built for Teams screen sharing: 72 px digits, a 5/100 stroke, turns orange
- * at 1:00 with a "1 min left" text label, and "Time's up" at zero. Never color alone. Ten minutes
- * or more (five characters) drop to 64 px inside rings under 260 px, so they stay in the ring.
+ * at 1:00 with a "1 min left" text label, and "Time's up" at zero. Never color alone. The digits
+ * drop to 64 px where 72 px would cross the stroke: rings under 200 px, and ten minutes or more
+ * (five characters) in rings under 260 px. Five characters at 64 px need a 240 px ring.
  */
 export function RingTimer({
   remaining,
@@ -100,6 +101,7 @@ export function RingTimer({
   const circumference = 2 * Math.PI * r
   const fraction = Math.min(1, ms / totalMs)
   const clock = formatClock(ms)
+  const big = clock.length > 4 ? size >= 260 : size >= 200
   const label = paused
     ? 'Paused'
     : done
@@ -130,7 +132,7 @@ export function RingTimer({
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span
-          className={`${clock.length > 4 && size < 260 ? 'text-[64px]' : 'text-[72px]'} leading-none font-extrabold tabular-nums ${urgent ? 'text-urgent' : 'text-ink'}`}
+          className={`${big ? 'text-[72px]' : 'text-[64px]'} leading-none font-extrabold tabular-nums ${urgent ? 'text-urgent' : 'text-ink'}`}
         >
           {clock}
         </span>
