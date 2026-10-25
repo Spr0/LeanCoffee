@@ -1,5 +1,6 @@
 // @vitest-environment node
-import { ping } from './keepalive.mts'
+// Lives outside netlify/functions: Netlify deploys every file in that folder as a function.
+import { ping } from './functions/keepalive.mts'
 
 const ok = async () => new Response('"ok"', { status: 200 })
 

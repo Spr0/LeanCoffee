@@ -30,6 +30,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run format:check
       - run: npm test
+      - name: Netlify function file names are deployable
+        run: '! ls netlify/functions | grep -vE "^[A-Za-z0-9_-]+\\.(m?[jt]s)$"'
       - name: Build (placeholder Supabase project; the real key is checked on Netlify)
         run: npm run build
         env:
