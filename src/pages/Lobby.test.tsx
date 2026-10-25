@@ -1,5 +1,6 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import type { BoardState, Participant, Settings } from '../lib/types'
+import { makeCtx as makeBoardCtx } from '../test/boardContext'
 import type { BoardContext } from './BoardView'
 import Lobby from './Lobby'
 
@@ -109,5 +110,48 @@ describe('Lobby', () => {
       '<img src=x onerror=alert(1)>',
     )
     expect(container.querySelector('img')).toBeNull()
+  })
+})
+
+describe('Lobby pitch and wrap-up timers', () => {
+  it('steps the pitch timer in 15 s steps down to Off', () => {
+    const ctx = makeBoardCtx({ settings: { pitch_s: 15 } })
+    render(<Lobby ctx={ctx} />)
+    expect(screen.getByRole('group', { name: 'Pitch' })).toHaveTextContent('15 s')
+    fireEvent.click(screen.getByRole('button', { name: 'Decrease Pitch' }))
+    expect(ctx.act).toHaveBeenLastCalledWith('update_settings', {
+      p_board: 'b1',
+      p_settings: { pitch_s: 0 },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Pitch' }))
+    expect(ctx.act).toHaveBeenLastCalledWith('update_settings', {
+      p_board: 'b1',
+      p_settings: { pitch_s: 30 },
+    })
+  })
+
+  it('shows Off and stops at the ends of each range', () => {
+    render(<Lobby ctx={makeBoardCtx({ settings: { pitch_s: 0, wrapup_s: 600 } })} />)
+    expect(screen.getByRole('group', { name: 'Pitch' })).toHaveTextContent('Off')
+    expect(screen.getByRole('button', { name: 'Decrease Pitch' })).toBeDisabled()
+    expect(screen.getByRole('group', { name: 'Wrap-up' })).toHaveTextContent('10:00')
+    expect(screen.getByRole('button', { name: 'Increase Wrap-up' })).toBeDisabled()
+  })
+
+  it('steps the wrap-up timer in whole minutes down to Off', () => {
+    const ctx = makeBoardCtx({ settings: { wrapup_s: 60 } })
+    render(<Lobby ctx={ctx} />)
+    expect(screen.getByRole('group', { name: 'Wrap-up' })).toHaveTextContent('1:00')
+    fireEvent.click(screen.getByRole('button', { name: 'Decrease Wrap-up' }))
+    expect(ctx.act).toHaveBeenLastCalledWith('update_settings', {
+      p_board: 'b1',
+      p_settings: { wrapup_s: 0 },
+    })
+  })
+
+  it('keeps the timers read-only for participants', () => {
+    render(<Lobby ctx={makeBoardCtx({ userId: 'u2' })} />)
+    expect(screen.getByRole('button', { name: 'Increase Pitch' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Decrease Wrap-up' })).toBeDisabled()
   })
 })

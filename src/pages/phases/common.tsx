@@ -43,29 +43,31 @@ export function PageTitle({ title, intro }: { title: string; intro?: string }) {
   )
 }
 
-/** Pause/resume and add-time controls for whichever timer is running. */
+/** Pause/resume and remove/add-time controls for whichever timer is running (spec F17). */
 export function TimerButtons({ ctx, addSeconds = 60 }: { ctx: BoardContext; addSeconds?: number }) {
   const { state, act } = ctx
   const running = state.phase_ends_at !== null
   const paused = state.paused_remaining_ms !== null
   if (!running && !paused) return null
-  const label = addSeconds >= 60 ? `+${addSeconds / 60} min` : `+${addSeconds} s`
+  const short = addSeconds >= 60 ? `${addSeconds / 60} min` : `${addSeconds} s`
+  const spoken = addSeconds >= 60 ? `${addSeconds / 60} minute` : `${addSeconds} seconds`
+  const adjust = (delta: number) =>
+    act('timer_adjust', { p_board: state.board_id, p_delta_s: delta })
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="grid grid-cols-3 gap-2">
       <Button
         variant="secondary"
         onClick={() => act(paused ? 'timer_resume' : 'timer_pause', { p_board: state.board_id })}
       >
         {paused ? 'Resume' : 'Pause'}
       </Button>
-      <Button
-        variant="secondary"
-        onClick={() => act('timer_adjust', { p_board: state.board_id, p_delta_s: addSeconds })}
-      >
-        <span aria-hidden="true">{label}</span>
-        <span className="sr-only">
-          Add {addSeconds >= 60 ? `${addSeconds / 60} minute` : `${addSeconds} seconds`}
-        </span>
+      <Button variant="secondary" onClick={() => adjust(-addSeconds)}>
+        <span aria-hidden="true">-{short}</span>
+        <span className="sr-only">Remove {spoken}</span>
+      </Button>
+      <Button variant="secondary" onClick={() => adjust(addSeconds)}>
+        <span aria-hidden="true">+{short}</span>
+        <span className="sr-only">Add {spoken}</span>
       </Button>
     </div>
   )

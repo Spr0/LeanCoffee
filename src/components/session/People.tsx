@@ -10,7 +10,7 @@ import { Dialog } from './Dialog'
 export function PeoplePanel({ ctx }: { ctx: BoardContext }) {
   const { board, state, userId, isFacilitator, act } = ctx
   const now = useNow(5000)
-  const [dialog, setDialog] = useState<'pass' | 'people' | null>(null)
+  const [dialog, setDialog] = useState<'pass' | 'people' | 'end' | null>(null)
   const [choice, setChoice] = useState<string | null>(null)
   const [muted, setMutedState] = useState(isMuted)
   const people = board.data.participants
@@ -19,6 +19,13 @@ export function PeoplePanel({ ctx }: { ctx: BoardContext }) {
   const others = present.filter((p) => p.user_id !== userId)
   const chosen = others.find((p) => p.user_id === choice)
   const canReclaim = !isFacilitator && state.owner_user_id === userId
+  // Spec section 8: everyone else sees when the facilitator's heartbeat has gone quiet.
+  const reconnecting =
+    !isFacilitator &&
+    facilitator !== undefined &&
+    !isPresent(facilitator.last_seen_at, now, board.offsetMs)
+  // Wrap-up has its own End session button; before that it lives here (spec F25).
+  const canEnd = isFacilitator && state.phase !== 'wrapup' && state.phase !== 'ended'
 
   return (
     <div className="border-t border-line pt-4">
@@ -27,8 +34,12 @@ export function PeoplePanel({ ctx }: { ctx: BoardContext }) {
         <span className="font-bold">
           {facilitator?.display_name ?? 'Nobody'}
           {isFacilitator && ' (you)'}
+          {reconnecting && <span className="font-medium text-muted"> (reconnecting)</span>}
         </span>
       </div>
+      <p role="status" className="sr-only">
+        {reconnecting ? `The facilitator, ${facilitator.display_name}, is reconnecting.` : ''}
+      </p>
       {isFacilitator && (
         <div className="mt-3 grid grid-cols-2 gap-2">
           <Button
@@ -41,6 +52,16 @@ export function PeoplePanel({ ctx }: { ctx: BoardContext }) {
           <Button variant="ghost" onClick={() => setDialog('people')}>
             Manage people
           </Button>
+          {canEnd && (
+            // Marked "!": the ghost variant's own border and text colors come later in the CSS.
+            <Button
+              variant="ghost"
+              className="col-span-2 border-danger! text-danger!"
+              onClick={() => setDialog('end')}
+            >
+              End session
+            </Button>
+          )}
         </div>
       )}
       {canReclaim && (
@@ -173,6 +194,25 @@ export function PeoplePanel({ ctx }: { ctx: BoardContext }) {
         </p>
         <div className="mt-5 flex justify-end">
           <Button onClick={() => setDialog(null)}>Done</Button>
+        </div>
+      </Dialog>
+
+      <Dialog open={dialog === 'end'} onClose={() => setDialog(null)} title="End the session now?">
+        <p className="mt-2 text-[15px] text-muted">
+          The board becomes read-only for everyone. Downloads stay available.
+        </p>
+        <div className="mt-5 flex justify-end gap-3">
+          <Button variant="ghost" onClick={() => setDialog(null)}>
+            Cancel
+          </Button>
+          <Button
+            className="bg-danger! text-ground!"
+            onClick={async () => {
+              if (await act('end_session', { p_board: state.board_id })) setDialog(null)
+            }}
+          >
+            End session now
+          </Button>
         </div>
       </Dialog>
     </div>
