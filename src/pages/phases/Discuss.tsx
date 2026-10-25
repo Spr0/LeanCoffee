@@ -377,10 +377,7 @@ function ExtendPanel({
   }
   const present = board.data.participants.length
   return (
-    <section
-      aria-label="Extend vote"
-      className="rounded-2xl border-2 border-teal bg-panel p-5"
-    >
+    <section aria-label="Extend vote" className="rounded-2xl border-2 border-teal bg-panel p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-[24px] font-extrabold">Keep talking about this?</h2>
         <p className="text-[16px] font-bold" aria-live="polite">
