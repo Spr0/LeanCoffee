@@ -144,7 +144,7 @@ test('launch fixes for the facilitator controls', async ({ browser }) => {
 
   // The facilitator's tab closes: others see "(reconnecting)" after 90 s without a heartbeat.
   await fran.close()
-  await expect(pat.getByText('(reconnecting)')).toBeVisible({ timeout: 120_000 })
+  await expect(pat.getByText('Facilitator Fran (reconnecting)')).toBeVisible({ timeout: 120_000 })
   await expect(pat.getByText('The facilitator, Fran, is reconnecting.')).toBeAttached()
   await axeBoth(pat, 'clarify, facilitator reconnecting')
   fran = await franContext.newPage()
@@ -153,7 +153,8 @@ test('launch fixes for the facilitator controls', async ({ browser }) => {
   await expect(fran.getByText('FACILITATOR', { exact: true })).toBeVisible()
   await expect(pat.getByText('(reconnecting)')).toHaveCount(0, { timeout: 30_000 })
 
-  // End the session from Clarify, after a confirmation that can be cancelled.
+  // End the session from Clarify, in the people dialog, after a confirmation that can be cancelled.
+  await fran.getByRole('button', { name: /^\d+ (person|people)$/ }).click()
   await btn(fran, 'End session').click()
   const confirmEnd = fran.getByRole('dialog', { name: 'End the session now?' })
   await expect(confirmEnd).toContainText(

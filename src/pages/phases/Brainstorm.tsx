@@ -1,30 +1,48 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { ClockPanel } from '../../components/session/Clock'
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { RingTimer } from '../../components/session/Clock'
 import { Button } from '../../components/ui'
 import { chime } from '../../lib/chime'
 import { callWhenDue } from '../../lib/retry'
+import { cards, plural } from '../../lib/session'
 import { formatClock } from '../../lib/time'
+import type { Topic } from '../../lib/types'
 import { useAtZero } from '../../state/useCountdown'
-import { Eyebrow, Layout, PageTitle, TimerButtons, type PhaseProps } from './common'
+import { ACCENT_CHIP, BoardFrame, CARD_TAG, useLiveLine } from './BrainstormFrame'
+import { TimerButtons, type PhaseProps } from './common'
+import { TOPIC_MAX, TopicEditor } from './TopicTools'
 
-const MAX = 160
 const PER_PERSON = 5
 
+/**
+ * Brainstorm as the board: To discuss fills up as people write, the writing form and the clock
+ * are on the stage. Cards from others show only if the database returns them (hide topics off);
+ * otherwise they are face down, drawn from the topic count alone.
+ */
 export default function Brainstorm({ ctx, remaining }: PhaseProps) {
   const { board, state, userId, isFacilitator, act } = ctx
+  const [note, announce] = useLiveLine()
   const [text, setText] = useState('')
-  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
-  const mine = board.data.topics
-    .filter((t) => t.author_user_id === userId)
-    .sort((a, b) => a.sort_order - b.sort_order)
-  const others = board.data.topics.filter((t) => t.author_user_id !== userId)
+  const [editing, setEditing] = useState<string | null>(null)
+  const fieldId = useId()
+  const countId = useId()
+  const headingId = useId()
+  const heading = useRef<HTMLHeadingElement>(null)
+  const hide = state.settings.hide_topics
+  const shown = cards(board.data.topics)
+  const mine = shown.filter((t) => t.author_user_id === userId)
+  const others = shown.filter((t) => t.author_user_id !== userId)
+  const hidden = hide ? Math.max(0, state.topic_count - shown.length) : 0
   const full = mine.length >= PER_PERSON
+  if (editing !== null && !mine.some((t) => t.id === editing)) setEditing(null)
   // Brainstorm opens with the clock stopped at the full time until the facilitator starts it (D64).
   const notStarted =
     state.phase_ends_at === null && state.paused_remaining_ms === state.settings.brainstorm_s * 1000
-  // Participants hear once that the clock started, but only if they saw it stopped.
-  const [sawStopped, setSawStopped] = useState(notStarted)
-  if (notStarted && !sawStopped) setSawStopped(true)
+  // Participants hear once that the clock started, if they saw it stopped.
+  const [wasStopped, setWasStopped] = useState(notStarted)
+  if (wasStopped !== notStarted) {
+    setWasStopped(notStarted)
+    if (!notStarted && !isFacilitator) announce('The clock has started.')
+  }
   // The Start button is replaced by the timer controls; focus follows to Pause.
   const [starting, setStarting] = useState(false)
   const controls = useRef<HTMLDivElement>(null)
@@ -47,198 +65,265 @@ export default function Brainstorm({ ctx, remaining }: PhaseProps) {
     if (!text.trim() || full) return
     // Clear at once so a slow reply cannot wipe the next topic being typed.
     const draft = text
+    const used = mine.length + 1
     setText('')
-    if (!(await act('add_topic', { p_board: state.board_id, p_text: draft }))) setText(draft)
+    if (await act('add_topic', { p_board: state.board_id, p_text: draft }))
+      announce(`Added "${draft.trim()}". ${used} of ${PER_PERSON} used.`)
+    else setText(draft)
   }
 
-  return (
-    <Layout
-      ctx={ctx}
-      main={
-        <div className="max-w-[800px]">
-          <PageTitle
-            title="Write the topics you want to talk about"
-            intro={
-              state.settings.hide_topics
-                ? 'One idea per card, short enough to read at a glance. Nobody else can see your cards until the clock ends.'
-                : 'One idea per card, short enough to read at a glance.'
-            }
-          />
-          <form onSubmit={add} className="mt-6 rounded-2xl border border-line-soft bg-surface p-5">
-            <label htmlFor="new-topic" className="text-[15px] font-bold">
-              New topic
-            </label>
-            <textarea
-              id="new-topic"
-              value={text}
-              maxLength={MAX}
-              rows={3}
-              disabled={full}
-              onChange={(e) => setText(e.target.value.replace(/\n/g, ' '))}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  void add()
-                }
-              }}
-              placeholder={
-                full
-                  ? 'You have added 5 topics, the most allowed.'
-                  : 'What do you want the group to talk about?'
-              }
-              className="mt-2 w-full resize-none rounded-xl border-2 border-teal bg-panel p-3 text-[17px] disabled:border-line"
+  // The card's buttons go with it, so focus moves to the column heading.
+  async function remove(t: Topic) {
+    if (await act('delete_topic', { p_topic: t.id })) {
+      announce(`"${t.text}" was deleted.`)
+      heading.current?.focus()
+    }
+  }
+
+  const end = () => act('start_phase', { p_board: state.board_id, p_phase: 'clarify' })
+  // As in Discuss (D76): a 200 px ring keeps 72 px digits and leaves room for the form on a
+  // 720 px share; a clock of 10:00 or more needs 240 px for its five characters.
+  const totalMs = Math.max(remaining ?? 0, state.settings.brainstorm_s * 1000)
+  const column = (
+    <>
+      <h2
+        ref={heading}
+        id={headingId}
+        tabIndex={-1}
+        className="flex justify-between px-1 text-[17px] font-bold"
+      >
+        To discuss <span className="text-muted">{shown.length + hidden}</span>
+      </h2>
+      {shown.length + hidden === 0 && (
+        <p className="mt-2 rounded-xl border-2 border-dashed border-line p-4 text-[15px] text-muted">
+          Cards land here as people write them.
+        </p>
+      )}
+      {shown.length > 0 && (
+        <ul aria-labelledby={headingId} className="mt-2 flex flex-col gap-2">
+          {mine.map((t) => (
+            <YourCard
+              key={t.id}
+              ctx={ctx}
+              topic={t}
+              editing={editing === t.id}
+              onEdit={setEditing}
+              onDelete={remove}
             />
-            <div className="mt-3 flex items-center justify-between gap-3">
-              <p className="text-[13px] text-muted">
-                {text.length} of {MAX} characters · Press Enter to add
-              </p>
-              <Button type="submit" disabled={full || !text.trim()}>
-                + Add topic
-              </Button>
-            </div>
-          </form>
-
-          <div className="mt-7">
-            <Eyebrow right={`${mine.length} of ${PER_PERSON}`}>Your topics</Eyebrow>
-            <ul className="mt-3 flex flex-col gap-2">
-              {mine.map((t) => (
-                <li
-                  key={t.id}
-                  className="flex items-center gap-2 rounded-xl border border-line-soft bg-panel p-4"
-                >
-                  {editing?.id === t.id ? (
-                    <form
-                      className="flex flex-1 flex-col gap-1"
-                      onSubmit={async (e) => {
-                        e.preventDefault()
-                        if (await act('edit_topic', { p_topic: t.id, p_text: editing.text }))
-                          setEditing(null)
-                      }}
-                    >
-                      <div className="flex gap-2">
-                        <input
-                          aria-label="Edit topic"
-                          aria-describedby={`edit-count-${t.id}`}
-                          className="h-11 min-w-0 flex-1 rounded-lg border-2 border-line bg-panel px-3 text-[16px]"
-                          value={editing.text}
-                          maxLength={MAX}
-                          onChange={(e) => setEditing({ id: t.id, text: e.target.value })}
-                          onKeyDown={(e) => e.key === 'Escape' && setEditing(null)}
-                        />
-                        <Button type="submit">Save</Button>
-                      </div>
-                      <p id={`edit-count-${t.id}`} className="text-[13px] text-muted">
-                        {editing.text.length} of {MAX} characters
-                      </p>
-                    </form>
-                  ) : (
-                    <>
-                      <span className="flex-1 text-[17px] font-bold">{t.text}</span>
-                      <Button
-                        variant="ghost"
-                        onClick={() => setEditing({ id: t.id, text: t.text })}
-                        aria-label={`Edit "${t.text}"`}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        onClick={() => act('delete_topic', { p_topic: t.id })}
-                        aria-label={`Delete "${t.text}"`}
-                      >
-                        Delete
-                      </Button>
-                    </>
-                  )}
-                </li>
-              ))}
-            </ul>
-            <p className="mt-2 text-[13px] text-muted">
-              You can edit or delete your cards until the clarify step begins.
-            </p>
+          ))}
+          {others.map((t) => (
+            <li key={t.id} className="rounded-xl border-2 border-line-soft bg-panel p-3">
+              <p className="text-[15px] leading-snug font-bold break-words">{t.text}</p>
+              <p className="mt-1 text-[13px] text-muted">{t.author_name}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+      {hidden > 0 && (
+        <>
+          {/* The backs of the cards; the line under them says the same in words. */}
+          <div aria-hidden="true" className="mt-2 flex flex-col gap-2">
+            {Array.from({ length: hidden }, (_, i) => (
+              <div
+                key={i}
+                className="flex h-12 items-center rounded-xl border-2 border-line-soft bg-line-soft px-3 text-[13px] font-bold text-muted dark:bg-line"
+              >
+                Face down until Clarify
+              </div>
+            ))}
           </div>
+          <p className="mt-2 px-1 text-[14px] text-muted">
+            <b className="text-ink">{hidden} from others</b>, hidden until Clarify
+          </p>
+        </>
+      )}
+      {mine.length > 0 && (
+        <p className="mt-3 px-1 text-[13px] text-muted">
+          You can edit or delete your cards until the clarify step begins.
+        </p>
+      )}
+    </>
+  )
 
-          {!state.settings.hide_topics && others.length > 0 && (
-            <div className="mt-7">
-              <Eyebrow>Everyone else</Eyebrow>
-              <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-                {others.map((t) => (
-                  <li key={t.id} className="rounded-xl border border-line-soft p-4">
-                    <p className="text-[16px] font-bold">{t.text}</p>
-                    <p className="mt-1 text-[13px] text-muted">{t.author_name}</p>
-                  </li>
-                ))}
-              </ul>
-            </div>
+  const stage = (
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+        <div className="min-w-0 grow basis-64">
+          <span className={ACCENT_CHIP}>WRITING SILENTLY</span>
+          <h1 className="mt-3 text-[36px] leading-[1.1] font-extrabold tracking-tight">
+            Write the topics you want to talk about
+          </h1>
+          <p className="mt-2 text-[16px] text-muted">
+            {hide
+              ? `One topic per card, up to ${PER_PERSON} each. Everyone else's cards stay face down until Clarify.`
+              : `One topic per card, up to ${PER_PERSON} each. Everyone sees the cards as they are written.`}
+          </p>
+          {!isFacilitator && notStarted && (
+            <p className="mt-4 rounded-xl bg-teal-soft p-4 text-[15px] font-bold">
+              The clock starts when the facilitator is ready.
+            </p>
           )}
         </div>
-      }
-      side={
-        <>
-          <ClockPanel
-            title="Brainstorm clock"
+        {/* Centered when it wraps under the heading, as on a phone. */}
+        <div className="mx-auto">
+          <RingTimer
             remaining={remaining}
-            totalMs={state.settings.brainstorm_s * 1000}
+            totalMs={totalMs}
             paused={state.paused_remaining_ms !== null && !notStarted}
+            size={formatClock(totalMs).length > 4 ? 240 : 200}
           />
-          {!isFacilitator && (
-            <p
-              role="status"
-              className={
-                notStarted ? 'rounded-xl bg-teal-soft p-4 text-[15px] font-bold' : 'sr-only'
-              }
-            >
-              {notStarted
-                ? 'The clock starts when the facilitator is ready.'
-                : sawStopped
-                  ? 'The clock has started.'
-                  : ''}
-            </p>
-          )}
-          <p className="text-[16px] font-bold" aria-live="polite">
-            {state.topic_count} {state.topic_count === 1 ? 'topic' : 'topics'} so far
-          </p>
-          {state.settings.hide_topics && (
-            <p className="rounded-xl bg-teal-soft p-4 text-[14px]">
-              Topics are revealed to everyone at once when the clock ends.
-            </p>
-          )}
-          {isFacilitator && (
-            <div ref={controls} className="flex flex-col gap-2">
-              {notStarted ? (
-                <>
-                  <Button
-                    className="h-14 text-[17px]"
-                    disabled={starting}
-                    onClick={async () => {
-                      // Set first: the live update can arrive before the call returns.
-                      startedHere.current = true
-                      setStarting(true)
-                      if (!(await act('timer_resume', { p_board: state.board_id })))
-                        startedHere.current = false
-                      setStarting(false)
-                    }}
-                  >
-                    Start the {formatClock(state.settings.brainstorm_s * 1000)} clock
-                  </Button>
-                  <p className="mb-2 text-[13px] text-muted">
-                    People can add topics before you start it.
-                  </p>
-                </>
-              ) : (
-                <TimerButtons ctx={ctx} />
-              )}
+        </div>
+      </div>
+      {/* With the clock, so they stay on a 720 px share above the form. */}
+      {isFacilitator && (
+        <div ref={controls} className="mt-4 flex flex-wrap items-center gap-2">
+          {notStarted ? (
+            <>
               <Button
-                className="h-12"
-                variant={notStarted ? 'secondary' : 'primary'}
-                onClick={() => act('start_phase', { p_board: state.board_id, p_phase: 'clarify' })}
+                className="h-14 px-8 text-[17px]"
+                disabled={starting}
+                onClick={async () => {
+                  // Set first: the live update can arrive before the call returns.
+                  startedHere.current = true
+                  setStarting(true)
+                  if (!(await act('timer_resume', { p_board: state.board_id })))
+                    startedHere.current = false
+                  setStarting(false)
+                }}
               >
+                Start the {formatClock(state.settings.brainstorm_s * 1000)} clock
+              </Button>
+              <Button variant="secondary" className="h-14" onClick={end}>
                 End brainstorm now
               </Button>
-            </div>
+              <p className="basis-full text-[13px] text-muted">
+                People can add topics before you start it.
+              </p>
+            </>
+          ) : (
+            <>
+              <TimerButtons ctx={ctx} />
+              <Button onClick={end}>End brainstorm now</Button>
+            </>
           )}
-        </>
+        </div>
+      )}
+      <form
+        onSubmit={add}
+        className="mt-4 rounded-2xl border border-line-soft bg-surface p-4 dark:bg-ground"
+      >
+        <label htmlFor={fieldId} className="text-[15px] font-bold">
+          New topic
+        </label>
+        <textarea
+          id={fieldId}
+          aria-describedby={countId}
+          value={text}
+          maxLength={TOPIC_MAX}
+          rows={2}
+          disabled={full}
+          onChange={(e) => setText(e.target.value.replace(/\n/g, ' '))}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              void add()
+            }
+          }}
+          placeholder={
+            full
+              ? `You have added ${PER_PERSON} topics, the most allowed.`
+              : 'What do you want the group to talk about?'
+          }
+          className="mt-2 w-full resize-none rounded-xl border-2 border-teal bg-panel p-3 text-[17px] disabled:border-line"
+        />
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <p id={countId} className="text-[13px] text-muted">
+            {text.length} of {TOPIC_MAX} characters · {mine.length} of {PER_PERSON} used · Press
+            Enter to add
+          </p>
+          <Button type="submit" disabled={full || !text.trim()}>
+            Add topic
+          </Button>
+        </div>
+      </form>
+    </>
+  )
+
+  return (
+    <BoardFrame
+      ctx={ctx}
+      progress={
+        <p className="text-[15px] font-bold">{plural(state.topic_count, 'topic')} so far</p>
       }
+      leftLabel="To discuss"
+      left={column}
+      stageLabel="Brainstorm"
+      stage={stage}
+      note={note}
+      onNote={announce}
     />
+  )
+}
+
+/** One of your cards: face up, marked in words, with Edit and Delete until Clarify. */
+function YourCard({
+  ctx,
+  topic: t,
+  editing,
+  onEdit,
+  onDelete,
+}: {
+  ctx: PhaseProps['ctx']
+  topic: Topic
+  editing: boolean
+  onEdit: (id: string | null) => void
+  onDelete: (t: Topic) => void
+}) {
+  // Save, Cancel and Escape put focus back on the card's Edit button.
+  const editId = useId()
+  const refocus = useRef(false)
+  useEffect(() => {
+    if (!editing && refocus.current) {
+      refocus.current = false
+      document.getElementById(editId)?.focus()
+    }
+  }, [editing, editId])
+  return (
+    <li className="rounded-xl border-2 border-teal bg-panel p-3">
+      {editing ? (
+        <TopicEditor
+          ctx={ctx}
+          topic={t}
+          onDone={() => {
+            refocus.current = true
+            onEdit(null)
+          }}
+        />
+      ) : (
+        <>
+          <p className={CARD_TAG}>YOURS</p>
+          <p className="text-[15px] leading-snug font-bold break-words">{t.text}</p>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <Button
+              id={editId}
+              variant="ghost"
+              className="min-w-0 px-3"
+              aria-label={`Edit "${t.text}"`}
+              onClick={() => onEdit(t.id)}
+            >
+              Edit
+            </Button>
+            <Button
+              variant="ghost"
+              className="min-w-0 px-3"
+              aria-label={`Delete "${t.text}"`}
+              onClick={() => onDelete(t)}
+            >
+              Delete
+            </Button>
+          </div>
+        </>
+      )}
+    </li>
   )
 }
