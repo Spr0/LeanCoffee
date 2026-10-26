@@ -81,11 +81,15 @@ export function QueueColumn({
   const headingId = useId()
   const skippedId = useId()
 
-  const moveUp = (i: number) => {
+  // The arrow keeps focus and its name, so the live line says where the topic went.
+  const moveUp = async (i: number) => {
     const ids = queue.map((q) => q.id)
     const [prev, cur] = [ids[i - 1], ids[i]]
-    if (prev && cur) ids.splice(i - 1, 2, cur, prev)
-    void act('reorder_topics', { p_board: state.board_id, p_ids: ids })
+    if (!prev || !cur) return
+    ids.splice(i - 1, 2, cur, prev)
+    if (!(await act('reorder_topics', { p_board: state.board_id, p_ids: ids }))) return
+    const text = `"${queue[i]?.text}"`
+    onNote(i === 1 ? `${text} is now up next.` : `${text} moved up to ${i} of ${ids.length}.`)
   }
   // The Bring back button disappears, so focus moves to the queue the topic returned to.
   const broughtBack = (message: string) => {
@@ -125,7 +129,7 @@ export function QueueColumn({
             actions={own(t)}
             editing={editing === t.id}
             first={i === 0}
-            onUp={() => moveUp(i)}
+            onUp={() => void moveUp(i)}
           />
         ))}
       </ol>
@@ -532,12 +536,14 @@ export function ActionItem({
     setDone(a.done)
   }
   return (
+    // The box sits on the first line of the action, so in a stack of wrapped actions it is clear
+    // which box goes with which; a one-line action stays centered in its 44 px row.
     <label
-      className={`flex min-h-11 items-center ${readOnly ? '' : 'cursor-pointer'} ${compact ? 'gap-2 text-[14px]' : 'gap-3 rounded-xl bg-surface p-3 text-[16px] dark:bg-ground'}`}
+      className={`flex min-h-11 items-start ${readOnly ? '' : 'cursor-pointer'} ${compact ? 'gap-2 py-2.5 text-[14px]' : 'gap-3 rounded-xl bg-surface p-3 text-[16px] dark:bg-ground'}`}
     >
       <input
         type="checkbox"
-        className="size-5 shrink-0 accent-[var(--teal)]"
+        className={`size-5 shrink-0 accent-[var(--teal)] ${compact ? 'mt-px' : 'mt-0.5'}`}
         checked={done}
         disabled={readOnly}
         aria-label={`Done: ${a.text}`}
@@ -562,7 +568,7 @@ export function ActionItem({
         )}
       </span>
       {!compact && a.owner_name && (
-        <b className={`max-w-[40%] text-right text-[14px] ${WRAP}`}>
+        <b className={`max-w-[40%] text-right text-[14px] leading-6 ${WRAP}`}>
           <bdi>{a.owner_name}</bdi>
         </b>
       )}

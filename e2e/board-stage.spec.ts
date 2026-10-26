@@ -208,6 +208,11 @@ test('the Discuss board: progress, stage and history on one screen', async ({ br
   // An extension by vote, then the mid-topic board for the screenshots.
   await btn(fran, 'Start the 5:00 clock').click()
   await btn(fran, 'Call vote now').click()
+  // While the vote is open the facilitator keeps the clock and Next topic on the share under it.
+  await expect(region(fran, 'Extend vote')).toBeVisible()
+  await fran.evaluate(() => window.scrollTo(0, 0))
+  await expect(btn(fran, 'Next topic')).toBeInViewport({ ratio: 1 })
+  await expect(btn(fran, 'Skip')).toHaveCount(0)
   for (const page of [fran, pat]) await page.getByRole('button', { name: /^Keep going/ }).click()
   await expect(
     pat.getByText('The group chose to keep going: the clock restarts at 3:00.'),
@@ -457,6 +462,24 @@ test('the Discuss board: progress, stage and history on one screen', async ({ br
   await shoot(pat, 'moved-on-participant')
   await axeBoth(fran, 'moved on, facilitator')
   await axeBoth(pat, 'moved on, participant')
+
+  // The next topic starts and is skipped: the Move on result was about the topic before, so it
+  // goes, with Extend anyway, and the last topic's actions go to the skipped one (wave2 MAR-1).
+  const upNext = (await fran.getByRole('heading', { level: 1 }).textContent()) ?? ''
+  await btn(fran, 'Start the 5:00 clock').click()
+  await expect(pat.getByRole('heading', { level: 1, name: upNext })).toBeVisible()
+  await btn(fran, 'Skip').click()
+  await expect(patQueue.getByRole('list', { name: 'Skipped 1' })).toContainText(upNext)
+  for (const page of [fran, pat]) {
+    await expect(region(page, 'Discussing')).toContainText('UP NEXT')
+    await expect(page.getByText('The group chose to move on.')).toHaveCount(0)
+  }
+  await expect(fran.getByRole('button', { name: /anyway/ })).toHaveCount(0)
+  await pat.getByLabel('New action').fill('Write the change-request template')
+  await btn(pat, 'Add action').click()
+  await expect(patQueue.getByRole('list', { name: 'Skipped 1' })).toContainText(
+    'Write the change-request template',
+  )
 
   for (const g of guards) g.check()
 })
