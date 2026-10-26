@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { RingTimer } from '../../components/session/Clock'
+import { PeopleButton } from '../../components/session/People'
 import { Button } from '../../components/ui'
 import { chime } from '../../lib/chime'
 import { callWhenDue } from '../../lib/retry'
@@ -7,11 +8,25 @@ import { cards, plural } from '../../lib/session'
 import { formatClock } from '../../lib/time'
 import type { Topic } from '../../lib/types'
 import { useAtZero } from '../../state/useCountdown'
-import { ACCENT_CHIP, BoardFrame, CARD_TAG, useLiveLine } from './BrainstormFrame'
-import { TimerButtons, type PhaseProps } from './common'
+import { useNow } from '../../state/useNow'
+import { DiscussedColumn, useEditFocus } from './BoardColumns'
+import {
+  ACCENT_CHIP,
+  BoardFrame,
+  CARD_TAG,
+  FILL_LEFT,
+  FILL_RIGHT,
+  SessionTime,
+  SideColumn,
+  TimerButtons,
+  useLiveNote,
+  type PhaseProps,
+} from './common'
 import { TOPIC_MAX, TopicEditor } from './TopicTools'
 
 const PER_PERSON = 5
+// Nothing is discussed yet; Discussed keeps the board's shape from the first phase on.
+const NO_VOTES = new Map<string, number>()
 
 /**
  * Brainstorm as the board: To discuss fills up as people write, the writing form and the clock
@@ -20,7 +35,8 @@ const PER_PERSON = 5
  */
 export default function Brainstorm({ ctx, remaining }: PhaseProps) {
   const { board, state, userId, isFacilitator, act } = ctx
-  const [note, announce] = useLiveLine()
+  const [note, announce] = useLiveNote()
+  const now = useNow(10_000)
   const [text, setText] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
   const fieldId = useId()
@@ -251,16 +267,24 @@ export default function Brainstorm({ ctx, remaining }: PhaseProps) {
 
   return (
     <BoardFrame
-      ctx={ctx}
       progress={
-        <p className="text-[15px] font-bold">{plural(state.topic_count, 'topic')} so far</p>
+        <>
+          <p className="text-[15px] font-bold">{plural(state.topic_count, 'topic')} so far</p>
+          <SessionTime state={state} nowMs={now + board.offsetMs} />
+        </>
       }
-      leftLabel="To discuss"
-      left={column}
+      tools={<PeopleButton ctx={ctx} />}
+      left={
+        <SideColumn label="To discuss" className={FILL_LEFT}>
+          {column}
+        </SideColumn>
+      }
       stageLabel="Brainstorm"
       stage={stage}
+      right={
+        <DiscussedColumn ctx={ctx} totals={NO_VOTES} onNote={announce} className={FILL_RIGHT} />
+      }
       note={note}
-      onNote={announce}
     />
   )
 }
@@ -279,15 +303,7 @@ function YourCard({
   onEdit: (id: string | null) => void
   onDelete: (t: Topic) => void
 }) {
-  // Save, Cancel and Escape put focus back on the card's Edit button.
-  const editId = useId()
-  const refocus = useRef(false)
-  useEffect(() => {
-    if (!editing && refocus.current) {
-      refocus.current = false
-      document.getElementById(editId)?.focus()
-    }
-  }, [editing, editId])
+  const { editId, closing } = useEditFocus(editing)
   return (
     <li className="rounded-xl border-2 border-teal bg-panel p-3">
       {editing ? (
@@ -295,7 +311,7 @@ function YourCard({
           ctx={ctx}
           topic={t}
           onDone={() => {
-            refocus.current = true
+            closing()
             onEdit(null)
           }}
         />

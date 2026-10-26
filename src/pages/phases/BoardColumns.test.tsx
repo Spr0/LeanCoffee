@@ -266,4 +266,40 @@ describe('DiscussedColumn', () => {
     )
     expect(screen.queryByText(/discussed so far/)).toBeNull()
   })
+
+  it('says nothing was discussed from Wrap-up on, and drops "so far"', () => {
+    const { rerender } = render(
+      <DiscussedColumn
+        ctx={makeCtx('u2', [makeTopic('t1', 'Open', 'open')], vi.fn(), { phase: 'wrapup' })}
+        totals={new Map()}
+        onNote={vi.fn()}
+      />,
+    )
+    const column = screen.getByRole('region', { name: 'Discussed' })
+    expect(column).toHaveTextContent('No topics were discussed.')
+    const done = { ...makeTopic('t1', 'Done', 'discussed'), time_spent_ms: 300_000 }
+    rerender(
+      <DiscussedColumn
+        ctx={makeCtx('u2', [done], vi.fn(), { phase: 'wrapup' })}
+        totals={new Map()}
+        onNote={vi.fn()}
+      />,
+    )
+    expect(column).toHaveTextContent('5:00 discussed · 0 actions in all')
+  })
+
+  it('is read-only on the ended board: no Edit or Delete, done boxes disabled (D61)', async () => {
+    const act = vi.fn(async () => true)
+    const ctx = makeCtx('u1', [makeTopic('t1', 'Done', 'discussed')], act, { phase: 'ended' })
+    ctx.board.data.actions = [
+      action('a1', 't1', 'Ship it', null),
+      action('a2', null, 'Loose', null),
+    ]
+    render(<DiscussedColumn ctx={ctx} totals={new Map()} onNote={vi.fn()} readOnly />)
+    expect(screen.queryByRole('button', { name: /^(Edit|Delete) "/ })).toBeNull()
+    expect(screen.getByRole('checkbox', { name: 'Done: Ship it' })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: 'Done: Loose' })).toBeDisabled()
+    await userEvent.setup().click(screen.getByRole('checkbox', { name: 'Done: Ship it' }))
+    expect(act).not.toHaveBeenCalled()
+  })
 })

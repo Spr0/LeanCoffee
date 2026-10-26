@@ -6,21 +6,20 @@ import { download } from '../../lib/export/download'
 import { boardTotals, cards, discussProgress, plural } from '../../lib/session'
 import type { BoardData } from '../../state/useBoard'
 import { useNow } from '../../state/useNow'
-import { DiscussedColumn } from './BoardColumns'
-import { Eyebrow, TimerButtons, type PhaseProps } from './common'
-import { EndedDiscussedColumn } from './EndedColumns'
-import { OwnerField, ownerName } from './OwnerField'
+import { ActionList, DiscussedColumn } from './BoardColumns'
 import {
   BoardFrame,
-  CardActions,
+  Eyebrow,
   FILL_LEFT,
   FILL_RIGHT,
   SessionTime,
   SideColumn,
-  STAGE,
+  TimerButtons,
   useLiveNote,
   useRefocus,
-} from './VoteBoard'
+  type PhaseProps,
+} from './common'
+import { OwnerField, ownerName } from './OwnerField'
 
 /**
  * Wrap-up as the final board: Not discussed on the left, take-aways, new actions, the downloads
@@ -55,26 +54,23 @@ export default function WrapUp({ ctx, remaining }: PhaseProps) {
       }
       tools={<PeopleButton ctx={ctx} />}
       left={<NotDiscussedColumn ctx={ctx} totals={totals} readOnly={ended} />}
+      stageLabel={ended ? 'Session ended' : 'Wrap-up'}
+      stageRef={stageRef}
       stage={
-        <section
-          key="stage"
-          ref={stageRef}
-          aria-label={ended ? 'Session ended' : 'Wrap-up'}
-          className={STAGE}
-        >
-          {ended ? (
-            <EndedStage ctx={ctx} heading={headingRef} />
-          ) : (
-            <WrapUpStage ctx={ctx} remaining={remaining} heading={headingRef} onNote={setNote} />
-          )}
-        </section>
+        ended ? (
+          <EndedStage ctx={ctx} heading={headingRef} />
+        ) : (
+          <WrapUpStage ctx={ctx} remaining={remaining} heading={headingRef} onNote={setNote} />
+        )
       }
       right={
-        ended ? (
-          <EndedDiscussedColumn ctx={ctx} totals={totals} className={FILL_RIGHT} />
-        ) : (
-          <DiscussedColumn ctx={ctx} totals={totals} onNote={setNote} className={FILL_RIGHT} />
-        )
+        <DiscussedColumn
+          ctx={ctx}
+          totals={totals}
+          onNote={setNote}
+          className={FILL_RIGHT}
+          readOnly={ended}
+        />
       }
       note={note}
     />
@@ -386,7 +382,7 @@ function NotDiscussedColumn({
                   {t.author_name} · {plural(totals.get(t.id) ?? 0, 'vote')}
                   {t.status === 'skipped' && ' · skipped'}
                 </p>
-                <CardActions
+                <ActionList
                   ctx={ctx}
                   topic={t}
                   actions={actions.filter((a) => a.topic_id === t.id)}

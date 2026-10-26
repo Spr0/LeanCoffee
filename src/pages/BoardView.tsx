@@ -102,8 +102,9 @@ export default function BoardView({
           )
         }
         right={
+          // On a phone the People dialog says who facilitates; the room code needs the room.
           isFacilitator && (
-            <span className="rounded-md bg-teal-soft px-2.5 py-1 text-[13px] font-extrabold tracking-[0.08em] text-teal">
+            <span className="hidden rounded-md bg-teal-soft px-2.5 py-1 text-[13px] font-extrabold tracking-[0.08em] text-teal sm:inline">
               FACILITATOR
             </span>
           )

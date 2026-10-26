@@ -16,21 +16,23 @@ import { formatClock, isPresent } from '../../lib/time'
 import type { Action, Topic } from '../../lib/types'
 import { useAtZero } from '../../state/useCountdown'
 import { useNow } from '../../state/useNow'
-import { DiscussedColumn } from './BoardColumns'
-import { Eyebrow, TimerButtons, type PhaseProps } from './common'
-import { DownloadsButton } from './Downloads'
+import { ActionList, DiscussedColumn } from './BoardColumns'
 import {
+  ACCENT_CHIP,
   BoardFrame,
-  CardActions,
+  CARD_TAG,
   CHIP,
+  Eyebrow,
   FILL_LEFT,
   FILL_RIGHT,
   SessionTime,
   SideColumn,
-  STAGE,
+  TimerButtons,
   useLiveNote,
   useRefocus,
-} from './VoteBoard'
+  type PhaseProps,
+} from './common'
+import { DownloadsButton } from './Downloads'
 import { agendaTies, voteCounts, type VoteCounts } from './VoteRanking'
 
 // A panel inside the stage. In dark mode --surface equals --panel, so it sits on the ground.
@@ -215,38 +217,33 @@ export default function Vote({ ctx, remaining }: PhaseProps) {
           heading={listHeadingRef}
         />
       }
+      stageLabel={revealed ? 'Results' : 'Voting'}
+      stageRef={stageRef}
       stage={
-        <section
-          key="stage"
-          ref={stageRef}
-          aria-label={revealed ? 'Results' : 'Voting'}
-          className={STAGE}
-        >
-          {revealed && counts ? (
-            <ResultsStage
-              ctx={ctx}
-              open={open}
-              counts={counts}
-              groups={groups}
-              heading={stageHeadingRef}
-              onNote={setNote}
-            />
-          ) : (
-            <VotingStage
-              ctx={ctx}
-              remaining={remaining}
-              tieRound={tieRound}
-              budget={budget}
-              usedNow={usedNow}
-              finished={finished}
-              present={present.length}
-              done={me?.finished_voting ?? false}
-              onFinish={finish}
-              onReveal={reveal}
-              heading={stageHeadingRef}
-            />
-          )}
-        </section>
+        revealed && counts ? (
+          <ResultsStage
+            ctx={ctx}
+            open={open}
+            counts={counts}
+            groups={groups}
+            heading={stageHeadingRef}
+            onNote={setNote}
+          />
+        ) : (
+          <VotingStage
+            ctx={ctx}
+            remaining={remaining}
+            tieRound={tieRound}
+            budget={budget}
+            usedNow={usedNow}
+            finished={finished}
+            present={present.length}
+            done={me?.finished_voting ?? false}
+            onFinish={finish}
+            onReveal={reveal}
+            heading={stageHeadingRef}
+          />
+        )
       }
       right={
         <DiscussedColumn
@@ -291,6 +288,7 @@ function VotingStage({
   const { settings } = state
   const revote = state.base_round > 0 && !tieRound
   const totalMs = (tieRound ? 30 : revote ? 60 : settings.vote_s) * 1000
+  const longest = Math.max(totalMs, remaining ?? 0)
   return (
     <>
       {/* Badges, heading and the ring share the first row, so "I'm done" and the facilitator's
@@ -298,7 +296,7 @@ function VotingStage({
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
         <div className="min-w-0 grow basis-64">
           <div className="flex flex-wrap gap-2">
-            <span className="rounded-md bg-teal-soft px-2.5 py-1 text-[14px] font-extrabold tracking-[0.08em] text-teal">
+            <span className={ACCENT_CHIP}>
               {tieRound ? 'TIE-BREAK' : revote ? 'RE-VOTE' : 'VOTING'}
             </span>
             <span className={CHIP}>Counts hidden until reveal</span>
@@ -326,11 +324,13 @@ function VotingStage({
         {remaining !== null && (
           // Centered when it wraps under the heading, as on a phone.
           <div className="mx-auto">
+            {/* The 30 s tie-break and the 60 s re-vote turn urgent at 0:10, not from the start. */}
             <RingTimer
               remaining={remaining}
-              totalMs={Math.max(totalMs, remaining)}
+              totalMs={longest}
               paused={state.paused_remaining_ms !== null}
               size={200}
+              urgentMs={longest <= 60_000 ? 10_000 : 60_000}
             />
           </div>
         )}
@@ -596,7 +596,7 @@ function TopicsColumn({
                 <p className="mt-1 text-[13px] text-muted">
                   {t.author_name} · {plural(earlier.get(t.id) ?? 0, 'vote')}
                 </p>
-                <CardActions ctx={ctx} topic={t} actions={own(t)} />
+                <ActionList ctx={ctx} topic={t} actions={own(t)} />
               </li>
             ))}
           </ul>
@@ -660,7 +660,7 @@ function VoteCard({
   )
   return (
     <li className={`rounded-xl border-2 bg-panel p-3 ${edge}`}>
-      {upNext && <p className="text-[13px] font-extrabold tracking-[0.1em] text-teal">UP NEXT</p>}
+      {upNext && <p className={CARD_TAG}>UP NEXT</p>}
       <div className="flex items-start gap-2">
         {counts && (
           // The list is numbered for screen readers already.
@@ -728,7 +728,7 @@ function VoteCard({
           {arrow(1, last, '↓', 'down')}
         </div>
       )}
-      <CardActions ctx={ctx} topic={t} actions={actions} />
+      <ActionList ctx={ctx} topic={t} actions={actions} />
     </li>
   )
 }

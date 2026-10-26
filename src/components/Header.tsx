@@ -51,22 +51,27 @@ export function ThemeToggle() {
   )
 }
 
-/** Common 64 px header for every screen. */
+/**
+ * Common 64 px header for every screen. On a phone a board's header drops the wordmark (the cup
+ * still links home), so the room code and Invite fit at 390 px.
+ */
 export function Header({ context, right }: { context?: ReactNode; right?: ReactNode }) {
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between border-b border-line-soft bg-ground px-4 sm:px-10">
-      <div className="flex items-center gap-3">
-        <a href="/" className="flex items-center gap-3" aria-label="Lean Coffee home">
+    <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-line-soft bg-ground px-4 sm:px-10">
+      <div className="flex min-w-0 items-center gap-3">
+        <a href="/" className="flex shrink-0 items-center gap-3" aria-label="Lean Coffee home">
           <span className="flex size-[34px] items-center justify-center rounded-[9px] bg-teal text-on-teal">
             <CupIcon />
           </span>
-          <span className="text-[19px] font-extrabold">Lean Coffee</span>
+          <span className={`text-[19px] font-extrabold ${context ? 'hidden sm:inline' : ''}`}>
+            Lean Coffee
+          </span>
         </a>
         {context && (
           <span className="border-l border-line pl-3 text-[15px] text-muted">{context}</span>
         )}
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-3">
         {right}
         <ThemeToggle />
       </div>

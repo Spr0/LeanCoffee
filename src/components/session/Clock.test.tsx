@@ -26,4 +26,17 @@ describe('RingTimer', () => {
     render(<RingTimer remaining={45_000} totalMs={300_000} paused={false} size={220} />)
     expect(screen.getByText('1 min left')).toBeInTheDocument()
   })
+
+  it('turns urgent later on a short clock, such as a 30 s tie-break', () => {
+    const { rerender } = render(
+      <RingTimer remaining={25_000} totalMs={30_000} paused={false} size={200} urgentMs={10_000} />,
+    )
+    expect(screen.getByText('of 0:30')).toBeInTheDocument()
+    expect(digits()).toHaveClass('text-ink')
+    rerender(
+      <RingTimer remaining={9_000} totalMs={30_000} paused={false} size={200} urgentMs={10_000} />,
+    )
+    expect(screen.getByText('10 s left')).toBeInTheDocument()
+    expect(digits()).toHaveClass('text-urgent')
+  })
 })

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { coalesce } from '../lib/coalesce'
 import { rpc, supabase } from '../lib/supabase'
 import { measureOffset } from '../lib/time'
 import type {
@@ -68,7 +69,9 @@ const CLOCK_RESYNC_MS = 60_000
  * Loads a board and keeps it current. Row changes arrive through Postgres Changes on a private
  * channel; RLS decides what each member may receive. A board_state change can change what is
  * visible elsewhere (phase, reveal), so it triggers a full reload; other changes reload one table.
- * Each load carries a sequence number so a slow, older response never overwrites a newer one.
+ * Each load carries a sequence number so a slow, older response never overwrites a newer one, and
+ * each table (and the full reload) has one load at a time with one more queued, so a burst of
+ * changes, such as the reveal re-ranking every topic, does not send a request per row.
  */
 export function useBoard(boardId: string): UseBoard {
   const [data, setData] = useState<BoardData>(EMPTY)
@@ -89,13 +92,22 @@ export function useBoard(boardId: string): UseBoard {
         return () => isActive() && latest.get(key) === n
       }
 
-      const loadTable = async (table: Table) => {
-        const current = ticket(table)
-        const { data: rows, error } = await supabase.from(table).select('*').eq('board_id', boardId)
-        if (!error && current()) setData((d) => ({ ...d, [KEYS[table]]: rows ?? [] }))
-      }
+      const loads = Object.fromEntries(
+        TABLES.map((table) => [
+          table,
+          coalesce(async () => {
+            const current = ticket(table)
+            const { data: rows, error } = await supabase
+              .from(table)
+              .select('*')
+              .eq('board_id', boardId)
+            if (!error && current()) setData((d) => ({ ...d, [KEYS[table]]: rows ?? [] }))
+          }),
+        ]),
+      ) as Record<Table, () => Promise<void>>
+      const loadTable = (table: Table) => loads[table]()
 
-      const refresh = async () => {
+      const refresh = coalesce(async () => {
         const current = ticket('board_state')
         const { data: state, error } = await supabase
           .from('board_state')
@@ -107,7 +119,7 @@ export function useBoard(boardId: string): UseBoard {
         setData((d) => ({ ...d, state: state as BoardState }))
         await Promise.all(TABLES.map(loadTable))
         if (isActive()) setLoaded(true)
-      }
+      })
 
       const syncClock = async () => {
         const sent = Date.now()

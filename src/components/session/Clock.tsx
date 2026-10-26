@@ -79,23 +79,27 @@ export function ClockPanel({
 
 /**
  * Stage ring timer, built for Teams screen sharing: 72 px digits, a 5/100 stroke, turns orange
- * at 1:00 with a "1 min left" text label, and "Time's up" at zero. Never color alone. The digits
- * drop to 64 px where 72 px would cross the stroke: rings under 200 px, and ten minutes or more
- * (five characters) in rings under 260 px. Five characters at 64 px need a 240 px ring.
+ * at 1:00 with a "1 min left" text label, and "Time's up" at zero. Never color alone. A clock of a
+ * minute or less (a pitch, a tie-break) passes a shorter `urgentMs`, as 0:10 with "10 s left", so
+ * it does not look urgent from the start. The digits drop to 64 px where 72 px would cross the
+ * stroke: rings under 200 px, and ten minutes or more (five characters) in rings under 260 px.
+ * Five characters at 64 px need a 240 px ring.
  */
 export function RingTimer({
   remaining,
   totalMs,
   paused,
   size = 260,
+  urgentMs = 60_000,
 }: {
   remaining: number | null
   totalMs: number
   paused: boolean
   size?: number
+  urgentMs?: number
 }) {
   const ms = remaining ?? 0
-  const urgent = remaining !== null && ms <= 60_000
+  const urgent = remaining !== null && ms <= urgentMs
   const done = remaining === 0
   const r = 50 - 6
   const circumference = 2 * Math.PI * r
@@ -107,7 +111,9 @@ export function RingTimer({
     : done
       ? "Time's up"
       : urgent
-        ? '1 min left'
+        ? urgentMs >= 60_000
+          ? `${Math.round(urgentMs / 60_000)} min left`
+          : `${Math.round(urgentMs / 1000)} s left`
         : `of ${formatClock(totalMs)}`
   return (
     <div

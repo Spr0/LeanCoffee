@@ -1,18 +1,35 @@
 import { useEffect, useId, useRef, useState, type RefObject } from 'react'
-import { ClockPanel } from '../../components/session/Clock'
+import { RingTimer } from '../../components/session/Clock'
+import { PeopleButton } from '../../components/session/People'
 import { Button } from '../../components/ui'
 import { chime } from '../../lib/chime'
 import { cards, mergedInto, plural } from '../../lib/session'
 import { formatClock } from '../../lib/time'
 import type { Topic } from '../../lib/types'
 import { useAtZero } from '../../state/useCountdown'
-import { ACCENT_CHIP, BoardFrame, CARD_TAG, useLiveLine, useStageFocus } from './BrainstormFrame'
+import { useNow } from '../../state/useNow'
+import { DiscussedColumn, useEditFocus } from './BoardColumns'
 import { clarifyMoves } from './ClarifyMoves'
-import { Eyebrow, TimerButtons, type PhaseProps } from './common'
+import {
+  ACCENT_CHIP,
+  BoardFrame,
+  CARD_TAG,
+  Eyebrow,
+  FILL_LEFT,
+  FILL_RIGHT,
+  SessionTime,
+  SideColumn,
+  TimerButtons,
+  useLiveNote,
+  useRefocus,
+  type PhaseProps,
+} from './common'
 import { DeleteTopicDialog, TopicEditor } from './TopicTools'
 
 /** Dots per person suggested in spec section 3 (Xebia): topics divided by two, 1 to 5. */
 const suggestDots = (topics: number) => Math.min(5, Math.max(1, Math.round(topics / 2)))
+// Nothing is discussed yet; Discussed keeps the board's shape from the first phase on.
+const NO_VOTES = new Map<string, number>()
 
 /**
  * Clarify as the board: every card face up in To discuss, merged cards stacked under the card
@@ -21,7 +38,8 @@ const suggestDots = (topics: number) => Math.min(5, Math.max(1, Math.round(topic
  */
 export default function Clarify({ ctx, remaining }: PhaseProps) {
   const { board, state, isFacilitator, act } = ctx
-  const [note, announce] = useLiveLine()
+  const [note, announce] = useLiveNote()
+  const now = useNow(10_000)
   const [selected, setSelected] = useState<string[]>([])
   const [editing, setEditing] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<Topic | null>(null)
@@ -55,7 +73,9 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
   }
 
   // Start pitches, Stop pitching, Merge and Keep separate leave with the stage's old content.
-  const { stage, heading } = useStageFocus(`${pitching?.id}|${merging}`)
+  const { area: stage, target: heading } = useRefocus<HTMLElement, HTMLHeadingElement>(
+    `${pitching?.id}|${merging}`,
+  )
 
   // After a delete the card's buttons are gone, so focus moves to the column heading. This runs
   // after the dialog has closed (child effects first), which would hand focus back to Delete.
@@ -135,17 +155,26 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
 
   return (
     <BoardFrame
-      ctx={ctx}
       progress={
-        <p className="text-[15px] font-bold">
-          {plural(list.length, 'topic')}
-          {mergedCount > 0 && (
-            <span className="font-medium text-muted"> · {plural(mergedCount, 'card')} merged</span>
-          )}
-        </p>
+        <>
+          <p className="text-[15px] font-bold">
+            {plural(list.length, 'topic')}
+            {mergedCount > 0 && (
+              <span className="font-medium text-muted">
+                {' '}
+                · {plural(mergedCount, 'card')} merged
+              </span>
+            )}
+          </p>
+          <SessionTime state={state} nowMs={now + board.offsetMs} />
+        </>
       }
-      leftLabel="To discuss"
-      left={column}
+      tools={<PeopleButton ctx={ctx} />}
+      left={
+        <SideColumn label="To discuss" className={FILL_LEFT}>
+          {column}
+        </SideColumn>
+      }
       stageLabel="Clarify"
       stageRef={stage}
       stage={
@@ -183,8 +212,10 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
           {isFacilitator && <NextStep ctx={ctx} count={list.length} onVote={toVote} />}
         </>
       }
+      right={
+        <DiscussedColumn ctx={ctx} totals={NO_VOTES} onNote={announce} className={FILL_RIGHT} />
+      }
       note={note}
-      onNote={announce}
     />
   )
 }
@@ -213,15 +244,7 @@ function ClarifyCard({
 }) {
   const { isFacilitator, act } = ctx
   const textId = useId()
-  // Save, Cancel and Escape put focus back on the card's Edit button.
-  const editId = useId()
-  const refocus = useRef(false)
-  useEffect(() => {
-    if (!editing && refocus.current) {
-      refocus.current = false
-      document.getElementById(editId)?.focus()
-    }
-  }, [editing, editId])
+  const { editId, closing } = useEditFocus(editing)
   const tags = [pitching && 'PITCHING NOW', selected && 'SELECTED'].filter(Boolean)
   const body = (
     <span className="flex items-start gap-2">
@@ -257,7 +280,7 @@ function ClarifyCard({
             ctx={ctx}
             topic={t}
             onDone={() => {
-              refocus.current = true
+              closing()
               onEdit(null)
             }}
           />
@@ -338,8 +361,9 @@ function MergedCard({ topic: c, onUndo }: { topic: Topic; onUndo?: () => void })
 }
 
 /**
- * The card being pitched, as the page heading at 44 px. The soft clock floats beside the first
- * lines and the topic runs full width under it; on a narrow stage the clock goes under the topic.
+ * The card being pitched, as the page heading at 44 px. The soft clock is a ring as in the other
+ * phases; it floats beside the first lines and the topic runs full width under it, and on a
+ * narrow stage it goes under the topic. A pitch is short, so the ring turns urgent at 0:10.
  */
 function PitchStage({
   ctx,
@@ -363,17 +387,18 @@ function PitchStage({
   const { board, state, isFacilitator } = ctx
   const merged = mergedInto(board.data.topics, topic.id)
   const timed = state.settings.pitch_s > 0
+  const totalMs = Math.max(remaining ?? 0, state.settings.pitch_s * 1000)
   return (
     <>
       <div className="flex flex-col gap-3 @lg:flow-root">
         {timed && (
-          <div className="order-last @lg:float-right @lg:mb-2 @lg:ml-6 @lg:w-[280px]">
-            <ClockPanel
-              title={`${topic.author_name} is pitching`}
+          <div className="order-last mx-auto @lg:float-right @lg:mb-2 @lg:ml-6">
+            <RingTimer
               remaining={remaining}
-              totalMs={state.settings.pitch_s * 1000}
+              totalMs={totalMs}
               paused={state.paused_remaining_ms !== null}
-              note="A soft clock. It chimes at zero but never cuts anyone off."
+              size={formatClock(totalMs).length > 4 ? 240 : 200}
+              urgentMs={10_000}
             />
           </div>
         )}
@@ -391,8 +416,13 @@ function PitchStage({
             {topic.text}
           </h1>
           <p className="mt-2 text-[17px] text-muted">
-            <b className="text-ink">{topic.author_name}</b> explains it in a sentence or two
+            <b className="text-ink">{topic.author_name}</b> is pitching it in a sentence or two
           </p>
+          {timed && (
+            <p className="mt-1 text-[14px] text-muted">
+              A soft clock: it chimes at zero and never cuts anyone off.
+            </p>
+          )}
           {merged.length > 0 && (
             <p className="mt-2 text-[16px] break-words">
               <b>Merged in:</b> {merged.map((c) => `${c.text} (${c.author_name})`).join('; ')}

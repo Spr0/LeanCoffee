@@ -326,6 +326,8 @@ describe('Vote board in a tie-break round', () => {
         .getAllByRole('button', { name: /^Add a dot/ })
         .map((b) => b.getAttribute('aria-label')),
     ).toEqual(['Add a dot to "Async updates"', 'Add a dot to "AI tools"'])
+    // A short clock turns urgent at 0:10, not from the start.
+    expect(screen.getByRole('timer')).toHaveTextContent('1:00of 1:00')
   })
 })
 

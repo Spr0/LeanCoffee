@@ -1,50 +1,12 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Button } from '../../components/ui'
 import { cards, extendedText, formatDuration, plural } from '../../lib/session'
 import type { Action, Topic } from '../../lib/types'
-import { Check, type PhaseProps } from './common'
+import { CARD_TAG, Check, SideColumn, type PhaseProps } from './common'
 import { BringBack, DeleteTopicDialog, TOPIC_MAX, TopicEditor } from './TopicTools'
 
-// The side columns of the Discuss board. In dark mode --surface equals --panel, so the columns sit
-// on the page ground with a 2 px ring instead, and the cards keep their edge.
-const COLUMN = 'min-w-0 rounded-2xl bg-surface p-3 dark:bg-ground dark:ring-2 dark:ring-line'
-
-/**
- * A side column. `className` lets it fill its grid cell and scroll on its own beside the stage, so
- * reaching the parking lot or an old topic leaves the topic and the timer on the share. While it
- * scrolls it takes a tab stop, so keyboard users can scroll it too.
- */
-function Column({
-  label,
-  className,
-  children,
-}: {
-  label: string
-  className: string
-  children: ReactNode
-}) {
-  const ref = useRef<HTMLElement>(null)
-  const [scrolls, setScrolls] = useState(false)
-  useEffect(() => {
-    const el = ref.current
-    if (!el || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(() => setScrolls(el.scrollHeight > el.clientHeight + 1))
-    observer.observe(el)
-    if (el.firstElementChild) observer.observe(el.firstElementChild)
-    return () => observer.disconnect()
-  }, [])
-  return (
-    <section
-      ref={ref}
-      aria-label={label}
-      // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrolling region needs a tab stop
-      tabIndex={scrolls ? 0 : undefined}
-      className={`${COLUMN} ${className}`}
-    >
-      <div className="flex flex-col">{children}</div>
-    </section>
-  )
-}
+// The side columns of the board. Each takes `className` to fill its grid cell and scroll on its
+// own beside the stage, so reaching the parking lot or an old topic leaves the stage on the share.
 
 /**
  * The open editor and the delete dialog for a column's cards. An editor left open on a card that
@@ -71,7 +33,7 @@ function useCardTools(here: Topic[]) {
 }
 
 /** Save, Cancel and Escape put focus back on the card's Edit button; opening another editor does not. */
-function useEditFocus(editing: boolean) {
+export function useEditFocus(editing: boolean) {
   const editId = useId()
   const refocus = useRef(false)
   useEffect(() => {
@@ -129,7 +91,7 @@ export function QueueColumn({
   const own = (t: Topic) => board.data.actions.filter((a) => a.topic_id === t.id)
 
   return (
-    <Column label="To discuss" className={className}>
+    <SideColumn label="To discuss" className={className}>
       <h2
         ref={heading}
         id={headingId}
@@ -185,7 +147,7 @@ export function QueueColumn({
           onNote(message)
         }}
       />
-    </Column>
+    </SideColumn>
   )
 }
 
@@ -260,9 +222,7 @@ function TopicCard({
         />
       ) : (
         <>
-          {first && (
-            <p className="text-[13px] font-extrabold tracking-[0.1em] text-teal">UP NEXT</p>
-          )}
+          {first && <p className={CARD_TAG}>UP NEXT</p>}
           <p className={`text-[15px] leading-snug break-words ${skipped ? '' : 'font-bold'}`}>
             {t.text}
           </p>
@@ -335,18 +295,21 @@ function ParkingLot({ ctx }: { ctx: PhaseProps['ctx'] }) {
 /**
  * Right column, Discussed: finished topics in order with time and votes, actions underneath, and
  * any actions left without a topic by a delete. The facilitator can still fix or remove a topic
- * here before the Word and Excel files are made.
+ * here before the Word and Excel files are made. Once the session has ended it is read-only (spec
+ * F25, decision D61): no Edit or Delete, and the done boxes are disabled.
  */
 export function DiscussedColumn({
   ctx,
   totals,
   onNote,
   className = '',
+  readOnly = false,
 }: {
   ctx: PhaseProps['ctx']
   totals: Map<string, number>
   onNote: (message: string) => void
   className?: string
+  readOnly?: boolean
 }) {
   const { topics, actions } = ctx.board.data
   const discussed = topics
@@ -358,14 +321,18 @@ export function DiscussedColumn({
   const others = actions.filter((a) => a.topic_id === null || !onBoard.has(a.topic_id))
   const othersId = useId()
   const spent = discussed.reduce((ms, t) => ms + t.time_spent_ms, 0)
+  // From Wrap-up on no more topics will be discussed.
+  const over = ctx.state.phase === 'wrapup' || ctx.state.phase === 'ended'
   return (
-    <Column label="Discussed" className={className}>
+    <SideColumn label="Discussed" className={className}>
       <h2 ref={heading} tabIndex={-1} className="flex justify-between px-1 text-[17px] font-bold">
         Discussed <span className="text-muted">{discussed.length}</span>
       </h2>
       {discussed.length === 0 ? (
         <p className="mt-2 rounded-xl border-2 border-dashed border-line p-4 text-[15px] text-muted">
-          Topics move here once discussed, with their time and the actions that came out of them.
+          {over
+            ? 'No topics were discussed.'
+            : 'Topics move here once discussed, with their time and the actions that came out of them.'}
         </p>
       ) : (
         // Two across when the column runs under the stage, between 1024 and 1280 px.
@@ -377,9 +344,10 @@ export function DiscussedColumn({
               topic={t}
               votes={totals.get(t.id) ?? 0}
               actions={actions.filter((a) => a.topic_id === t.id)}
-              editing={editing === t.id}
+              editing={!readOnly && editing === t.id}
               onEdit={setEditing}
               onDelete={setDeleting}
+              readOnly={readOnly}
             />
           ))}
         </ol>
@@ -398,7 +366,7 @@ export function DiscussedColumn({
           >
             {others.map((a) => (
               <li key={a.id}>
-                <ActionItem ctx={ctx} action={a} compact />
+                <ActionItem ctx={ctx} action={a} compact readOnly={readOnly} />
               </li>
             ))}
           </ul>
@@ -406,25 +374,36 @@ export function DiscussedColumn({
       )}
       {discussed.length > 0 && (
         <p className="mt-3 px-1 text-[14px] text-muted">
-          <b className="text-ink">{formatDuration(spent)}</b> discussed so far ·{' '}
+          <b className="text-ink">{formatDuration(spent)}</b> discussed{over ? '' : ' so far'} ·{' '}
           <b className="text-ink">{plural(actions.length, 'action')}</b> in all
         </p>
       )}
-      <DeleteTopicDialog
-        ctx={ctx}
-        topic={deleting}
-        onClose={() => setDeleting(null)}
-        onDeleted={(message) => {
-          afterDelete()
-          onNote(message)
-        }}
-      />
-    </Column>
+      {!readOnly && (
+        <DeleteTopicDialog
+          ctx={ctx}
+          topic={deleting}
+          onClose={() => setDeleting(null)}
+          onDeleted={(message) => {
+            afterDelete()
+            onNote(message)
+          }}
+        />
+      )}
+    </SideColumn>
   )
 }
 
 /** A card in Discussed: a check and the time say it is done, not color alone. */
-function DiscussedCard({ ctx, topic: t, votes, actions, editing, onEdit, onDelete }: CardProps) {
+function DiscussedCard({
+  ctx,
+  topic: t,
+  votes,
+  actions,
+  editing,
+  onEdit,
+  onDelete,
+  readOnly,
+}: CardProps & { readOnly: boolean }) {
   const { editId, closing } = useEditFocus(editing)
   return (
     <li className="rounded-xl border-2 border-line-soft bg-panel p-3">
@@ -451,27 +430,29 @@ function DiscussedCard({ ctx, topic: t, votes, actions, editing, onEdit, onDelet
             <b className="text-ink">{formatDuration(t.time_spent_ms)}</b> · {plural(votes, 'vote')}
             {t.extensions > 0 && ` · ${extendedText(t.extensions)}`}
           </p>
-          {ctx.isFacilitator && (
+          {ctx.isFacilitator && !readOnly && (
             <div className="mt-2 grid grid-cols-2 gap-2">
               <CardTools topic={t} editId={editId} onEdit={onEdit} onDelete={onDelete} />
             </div>
           )}
         </>
       )}
-      <ActionList ctx={ctx} topic={t} actions={actions} />
+      <ActionList ctx={ctx} topic={t} actions={actions} readOnly={readOnly} />
     </li>
   )
 }
 
-/** A topic's actions under its card, each with its done box. */
-function ActionList({
+/** A topic's actions under its card, each with its done box (disabled once the board ends). */
+export function ActionList({
   ctx,
   topic,
   actions,
+  readOnly = false,
 }: {
   ctx: PhaseProps['ctx']
   topic: Topic
   actions: Action[]
+  readOnly?: boolean
 }) {
   if (actions.length === 0) return null
   return (
@@ -481,31 +462,37 @@ function ActionList({
     >
       {actions.map((a) => (
         <li key={a.id}>
-          <ActionItem ctx={ctx} action={a} compact />
+          <ActionItem ctx={ctx} action={a} compact readOnly={readOnly} />
         </li>
       ))}
     </ul>
   )
 }
 
-/** An action and its done box, for everyone. The whole row is the 44 px target. */
+/**
+ * An action and its done box, for everyone. The whole row is the 44 px target. Read-only, on the
+ * ended board, the box is disabled (D61).
+ */
 export function ActionItem({
   ctx,
   action: a,
   compact = false,
+  readOnly = false,
 }: {
   ctx: PhaseProps['ctx']
   action: Action
   compact?: boolean
+  readOnly?: boolean
 }) {
   return (
     <label
-      className={`flex min-h-11 cursor-pointer items-center gap-3 ${compact ? 'text-[14px]' : 'rounded-xl bg-surface p-3 text-[16px] dark:bg-ground'}`}
+      className={`flex min-h-11 items-center gap-3 ${readOnly ? '' : 'cursor-pointer'} ${compact ? 'text-[14px]' : 'rounded-xl bg-surface p-3 text-[16px] dark:bg-ground'}`}
     >
       <input
         type="checkbox"
         className="size-5 shrink-0 accent-[var(--teal)]"
         checked={a.done}
+        disabled={readOnly}
         aria-label={`Done: ${a.text}`}
         onChange={(e) => ctx.act('toggle_action', { p_action: a.id, p_done: e.target.checked })}
       />
