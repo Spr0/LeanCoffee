@@ -60,6 +60,46 @@ export interface ExportModel {
 
 const wholeSeconds = (ms: number) => Math.max(0, Math.round(ms / 1000) * 1000)
 
+/** A topic's status in the files. Booked time under half a second rounds to none. */
+function statusOf(t: Topic): ExportStatus {
+  if (t.status === 'discussed') return 'Discussed'
+  if (t.status === 'discussing') return 'Being discussed'
+  if (t.status === 'skipped') return 'Skipped'
+  return wholeSeconds(t.time_spent_ms) > 0 ? 'Partly discussed' : 'Not discussed'
+}
+
+/**
+ * What happened to a topic that was not discussed, as the Word file says it after the votes:
+ * "skipped", "skipped after 0:05" or "partly discussed, 0:07" (deferred, or skipped and brought
+ * back: the board stores both as open with time spent). Null for a topic that never reached the
+ * stage, or one that is not left over. The board's Not discussed cards can use the same words.
+ */
+export function leftNote(status: ExportStatus, timeSpentMs: number): string | null {
+  const spent = wholeSeconds(timeSpentMs)
+  if (status === 'Skipped') return spent > 0 ? `skipped after ${mss(spent)}` : 'skipped'
+  if (status === 'Partly discussed') return `partly discussed, ${mss(spent)}`
+  return null
+}
+
+/** leftNote for a topic as the board holds it. */
+export function topicLeftNote(t: Topic): string | null {
+  return leftNote(statusOf(t), t.time_spent_ms)
+}
+
+/**
+ * Everyone who took part: the people on the board, and anyone removed since who left a topic, a
+ * dot or a take-away behind. Removing someone deletes only their place on the board, so counting
+ * the people list alone made an ended session's files shrink after a removal.
+ */
+export function peopleWhoTookPart(data: BoardData): Set<string> {
+  return new Set([
+    ...data.participants.map((p) => p.user_id),
+    ...data.topics.map((t) => t.author_user_id),
+    ...data.votes.map((v) => v.user_id),
+    ...data.takeaways.map((t) => t.user_id),
+  ])
+}
+
 /**
  * Everything the Word and Excel files show, from the board as it is now. `now` should be the
  * server-corrected time (download() measures it), so the session length and the time so far on
@@ -77,16 +117,6 @@ export function buildModel(data: BoardData, now: Date, locale?: string): ExportM
   const list = cards(data.topics)
   const textOf = (t: Topic) => [t.text, ...merged(t.id).map((m) => m.text)].join(' / ')
 
-  const statusOf = (t: Topic): ExportStatus =>
-    t.status === 'discussed'
-      ? 'Discussed'
-      : t.status === 'discussing'
-        ? 'Being discussed'
-        : t.status === 'skipped'
-          ? 'Skipped'
-          : t.time_spent_ms >= 500
-            ? 'Partly discussed'
-            : 'Not discussed'
   const spentOf = (t: Topic) => {
     // The topic on stage adds its running segment, which the server books when it leaves.
     const running =
@@ -155,7 +185,7 @@ export function buildModel(data: BoardData, now: Date, locale?: string): ExportM
     title: state.name || 'Lean Coffee',
     date,
     dateText: date.toLocaleDateString(locale, { year: 'numeric', month: 'long', day: 'numeric' }),
-    people: data.participants.length,
+    people: peopleWhoTookPart(data).size,
     minutes: state.started_at
       ? Math.max(0, Math.round((end - Date.parse(state.started_at)) / 60_000))
       : 0,
