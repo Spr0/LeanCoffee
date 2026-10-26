@@ -133,8 +133,10 @@ test('Vote, Wrap-up and the ended board as the board', async ({ browser }) => {
   await expect(start).toBeVisible({ timeout: 20_000 })
   await start.click()
 
+  // The first on the agenda is near the 160-character limit: as the page heading at 44 px it
+  // must still leave Start discussing on the share.
   const [onboard, ai, pairing, async, sayNo, decisions] = [
-    'How do we onboard remote hires in their first two weeks?',
+    'How do we onboard remote hires in their first two weeks, when the buddy, the manager and IT each think someone else owns the checklist and nobody follows up?',
     'AI tools: what is actually saving us time?',
     'Pairing vs. async code review',
     'Making async updates actually get read',
@@ -226,7 +228,7 @@ test('Vote, Wrap-up and the ended board as the board', async ({ browser }) => {
   })
   await btn(pat, `Add a dot to "${decisions}"`).click()
   await btn(pat, "I'm done").click()
-  await expect(pat.getByRole('heading', { level: 1, name: 'Here is the agenda' })).toBeVisible()
+  await expect(region(pat, 'Results')).toBeVisible()
   await pat.unroute('**/rest/v1/rpc/cast_dots')
   // One dot request, saved: a refused one would answer 400 (voting closed).
   expect(castStatus.map((status) => status < 300)).toEqual([true])
@@ -235,14 +237,16 @@ test('Vote, Wrap-up and the ended board as the board', async ({ browser }) => {
   await expect(pat.getByRole('alert')).toHaveCount(0)
 
   // The reveal: To discuss is the ranked agenda with totals and ties; Discussed is still empty.
-  await expect(fran.getByRole('heading', { level: 1, name: 'Here is the agenda' })).toBeVisible()
+  // The stage is laid out as Discuss's Up next, with the next topic as the page heading.
   for (const page of [fran, pat]) {
     await expect(region(page, 'Results')).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(onboard)
+    await expect(region(page, 'Results')).toContainText(/^AGENDA/)
     await expect(card(page, 'To discuss', onboard)).toContainText('UP NEXT')
     await expect(card(page, 'To discuss', onboard)).toContainText('2 votes')
     await expect(region(page, 'To discuss').getByText('TIED', { exact: true })).toHaveCount(4)
     await expect(card(page, 'To discuss', pairing)).not.toContainText('TIED')
-    await expect(region(page, 'Results')).toContainText(`UP NEXT${onboard}`)
+    await expect(region(page, 'Results')).toContainText(`UP NEXT${onboard}Raised by Pat`)
     await expect(region(page, 'Discussed').getByRole('heading')).toHaveText('Discussed 0')
   }
   await expect(pat.getByText('Voting closed. Here is the agenda.')).toBeAttached()
@@ -260,6 +264,7 @@ test('Vote, Wrap-up and the ended board as the board', async ({ browser }) => {
     expect(sizes.sideways).toBe(false)
   }
   await onShare(fran, ['To discuss', 'Results', 'Discussed'], 'Start discussing')
+  await expect(region(pat, 'Results').getByText('Raised by')).toBeInViewport({ ratio: 1 })
   // Downloads from the reveal on, in the toolbar as in Discuss; Escape returns focus.
   await btn(pat, 'Downloads').click()
   await expect(
@@ -362,6 +367,8 @@ test('Vote, Wrap-up and the ended board as the board', async ({ browser }) => {
       'Draft a two-week onboarding checklist · Maya',
     )
     await expect(btn(page, 'Download Word file')).toBeEnabled()
+    // The downloads are in the toolbar too, as from the reveal on.
+    await expect(btn(page, 'Downloads')).toBeVisible()
     await expect(page.getByText('2 of 6 discussed')).toBeVisible()
   }
   await expect(btn(pat, 'End session')).toHaveCount(0)
@@ -392,7 +399,10 @@ test('Vote, Wrap-up and the ended board as the board', async ({ browser }) => {
     expect(sizes.smallest).toBeGreaterThanOrEqual(13)
     expect(sizes.sideways).toBe(false)
     await onShare(page, ['Not discussed', 'Wrap-up', 'Discussed'], 'Your take-away')
+    await expect(btn(page, 'Download Excel file')).toBeInViewport({ ratio: 1 })
   }
+  // Before the shared take-aways, so a long list cannot push it off the share.
+  await expect(btn(fran, 'End session')).toBeInViewport({ ratio: 1 })
 
   // The files use the board's dots: after the re-vote the discussed topic keeps its 2.
   const [xlsx] = await Promise.all([

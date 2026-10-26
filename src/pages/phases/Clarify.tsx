@@ -30,11 +30,16 @@ import { DeleteTopicDialog, TopicEditor } from './TopicTools'
 const suggestDots = (topics: number) => Math.min(5, Math.max(1, Math.round(topics / 2)))
 // Nothing is discussed yet; Discussed keeps the board's shape from the first phase on.
 const NO_VOTES = new Map<string, number>()
+// The stage's page heading: 32 px when it says what to do, as in every phase, and 44 px for the
+// Teams share when it is the topic in focus.
+const STAGE_TITLE = 'text-[32px] leading-tight font-extrabold tracking-tight'
+const FOCUS_TITLE = 'text-[44px] leading-[1.08] font-extrabold tracking-tight wrap-anywhere'
 
 /**
  * Clarify as the board: every card face up in To discuss, merged cards stacked under the card
  * they joined. The stage holds the current focus: the card being pitched with its clock, the
- * merge of two selected cards, or how to tidy up; under it the facilitator's way on to voting.
+ * merge of two selected cards, or how to tidy up; under it the suggested dots. The facilitator's
+ * Continue to voting is in the toolbar, so a long topic on stage cannot push it off the share.
  */
 export default function Clarify({ ctx, remaining }: PhaseProps) {
   const { board, state, isFacilitator, act } = ctx
@@ -43,6 +48,8 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
   const [selected, setSelected] = useState<string[]>([])
   const [editing, setEditing] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<Topic | null>(null)
+  // A card taken out of a stack: its Undo merge has gone, so focus moves to the card itself.
+  const [restored, setRestored] = useState<string | null>(null)
   const columnHeading = useRef<HTMLHeadingElement>(null)
   const headingId = useId()
   const topics = board.data.topics
@@ -103,6 +110,9 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
     )
       setSelected([])
   }
+  async function unmerge(id: string) {
+    if (await act('unmerge_topic', { p_topic: id })) setRestored(id)
+  }
   const startPitch = (id: string | null) =>
     act('set_pitch', { p_board: state.board_id, p_topic: id })
   const toVote = () => act('start_phase', { p_board: state.board_id, p_phase: 'vote' })
@@ -133,9 +143,12 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
               pitching={t.id === pitching?.id}
               selected={chosen.includes(t.id)}
               editing={editing === t.id}
+              restored={restored === t.id}
               onToggle={() => toggle(t.id)}
               onEdit={setEditing}
               onDelete={setDeleting}
+              onUndo={(id) => void unmerge(id)}
+              onRestored={() => setRestored(null)}
             />
           ))}
         </ul>
@@ -169,7 +182,12 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
           <SessionTime state={state} nowMs={now + board.offsetMs} />
         </>
       }
-      tools={<PeopleButton ctx={ctx} />}
+      tools={
+        <>
+          <PeopleButton ctx={ctx} />
+          {isFacilitator && <Button onClick={toVote}>Continue to voting</Button>}
+        </>
+      }
       left={
         <SideColumn label="To discuss" className={FILL_LEFT}>
           {column}
@@ -209,7 +227,7 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
               onSkip={toVote}
             />
           )}
-          {isFacilitator && <NextStep ctx={ctx} count={list.length} onVote={toVote} />}
+          {isFacilitator && <NextStep ctx={ctx} count={list.length} />}
         </>
       }
       right={
@@ -220,7 +238,10 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
   )
 }
 
-/** A card in To discuss. For the facilitator the card itself is the select button. */
+/**
+ * A card in To discuss. For the facilitator the card itself is the select button. A card just
+ * taken out of a stack (`restored`) takes focus once it is back in the list.
+ */
 function ClarifyCard({
   ctx,
   topic: t,
@@ -228,9 +249,12 @@ function ClarifyCard({
   pitching,
   selected,
   editing,
+  restored,
   onToggle,
   onEdit,
   onDelete,
+  onUndo,
+  onRestored,
 }: {
   ctx: PhaseProps['ctx']
   topic: Topic
@@ -238,22 +262,32 @@ function ClarifyCard({
   pitching: boolean
   selected: boolean
   editing: boolean
+  restored: boolean
   onToggle: () => void
   onEdit: (id: string | null) => void
   onDelete: (t: Topic) => void
+  onUndo: (id: string) => void
+  onRestored: () => void
 }) {
-  const { isFacilitator, act } = ctx
-  const textId = useId()
+  const { isFacilitator } = ctx
   const { editId, closing } = useEditFocus(editing)
+  const select = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!restored) return
+    select.current?.focus()
+    onRestored()
+  }, [restored, onRestored])
   const tags = [pitching && 'PITCHING NOW', selected && 'SELECTED'].filter(Boolean)
   const body = (
     <span className="flex items-start gap-2">
       <span className="min-w-0 flex-1">
         {tags.length > 0 && <span className={`block ${CARD_TAG}`}>{tags.join(' · ')}</span>}
-        <span id={textId} className="block text-[15px] leading-snug font-bold break-words">
+        <span dir="auto" className="block text-[15px] leading-snug font-bold wrap-anywhere">
           {t.text}
         </span>
-        <span className="mt-1 block text-[13px] text-muted">{t.author_name}</span>
+        <span dir="auto" className="mt-1 block text-[13px] wrap-anywhere text-muted">
+          {t.author_name}
+        </span>
       </span>
       {/* A box to tick says the card can be selected; ticked, with SELECTED, when it is. */}
       {isFacilitator && (
@@ -288,21 +322,21 @@ function ClarifyCard({
       ) : isFacilitator ? (
         <>
           <button
+            ref={select}
             type="button"
-            className="w-full rounded-xl p-3 text-left"
+            className="w-full rounded-xl p-3 text-start"
             aria-pressed={selected}
             onClick={onToggle}
           >
             {body}
           </button>
-          {/* Names leave out the topic text (it is the description instead), so the card's
-              select button stays the only one named after the topic. */}
+          {/* Named for the topic, as on every other phase's cards. */}
           <div className="grid grid-cols-2 gap-2 px-3 pb-3">
             <Button
               id={editId}
               variant="ghost"
               className={`min-w-0 px-3 ${pitching ? 'col-span-2' : ''}`}
-              aria-describedby={textId}
+              aria-label={`Edit "${t.text}"`}
               onClick={() => onEdit(t.id)}
             >
               Edit
@@ -312,7 +346,7 @@ function ClarifyCard({
               <Button
                 variant="ghost"
                 className="min-w-0 px-3"
-                aria-describedby={textId}
+                aria-label={`Delete "${t.text}"`}
                 onClick={() => onDelete(t)}
               >
                 Delete
@@ -330,7 +364,7 @@ function ClarifyCard({
             <MergedCard
               key={c.id}
               topic={c}
-              onUndo={isFacilitator ? () => act('unmerge_topic', { p_topic: c.id }) : undefined}
+              onUndo={isFacilitator ? () => onUndo(c.id) : undefined}
             />
           ))}
         </ul>
@@ -343,13 +377,16 @@ function MergedCard({ topic: c, onUndo }: { topic: Topic; onUndo?: () => void })
   const textId = useId()
   return (
     <li className="ml-2 flex min-h-11 items-center gap-2 rounded-lg border-2 border-line-soft bg-surface py-1 pr-1 pl-2.5 text-[14px] dark:bg-ground">
-      <span id={textId} className="min-w-0 flex-1 break-words">
-        + {c.text} <span className="text-muted">({c.author_name})</span>
+      <span id={textId} dir="auto" className="min-w-0 flex-1 wrap-anywhere">
+        + {c.text}{' '}
+        <span className="text-muted">
+          (<bdi>{c.author_name}</bdi>)
+        </span>
       </span>
       {onUndo && (
         <button
           type="button"
-          className="min-h-11 shrink-0 rounded-lg px-2 font-bold text-teal underline"
+          className="min-h-11 shrink-0 rounded-lg px-2 text-[15px] font-bold text-teal underline"
           aria-describedby={textId}
           onClick={onUndo}
         >
@@ -363,7 +400,8 @@ function MergedCard({ topic: c, onUndo }: { topic: Topic; onUndo?: () => void })
 /**
  * The card being pitched, as the page heading at 44 px. The soft clock is a ring as in the other
  * phases; it floats beside the first lines and the topic runs full width under it, and on a
- * narrow stage it goes under the topic. A pitch is short, so the ring turns urgent at 0:10.
+ * narrow stage it goes under the topic. The facilitator's buttons sit under the ring, so a long
+ * topic cannot push them off a 720 px share. A pitch is short, so the ring turns urgent at 0:10.
  */
 function PitchStage({
   ctx,
@@ -389,59 +427,73 @@ function PitchStage({
   const timed = state.settings.pitch_s > 0
   const totalMs = Math.max(remaining ?? 0, state.settings.pitch_s * 1000)
   return (
-    <>
-      <div className="flex flex-col gap-3 @lg:flow-root">
-        {timed && (
-          <div className="order-last mx-auto @lg:float-right @lg:mb-2 @lg:ml-6">
-            <RingTimer
-              remaining={remaining}
-              totalMs={totalMs}
-              paused={state.paused_remaining_ms !== null}
-              size={formatClock(totalMs).length > 4 ? 240 : 200}
-              urgentMs={10_000}
-            />
-          </div>
-        )}
-        <div className="flex flex-wrap gap-2">
-          <span className={ACCENT_CHIP}>
-            PITCH {number} OF {count}
-          </span>
-        </div>
-        <div className="min-w-0 @lg:mt-3">
-          <h1
-            ref={heading}
-            tabIndex={-1}
-            className="text-[44px] leading-[1.08] font-extrabold tracking-tight break-words"
-          >
-            {topic.text}
-          </h1>
-          <p className="mt-2 text-[17px] text-muted">
-            <b className="text-ink">{topic.author_name}</b> is pitching it in a sentence or two
-          </p>
+    <div className="flex flex-col gap-3 @lg:flow-root">
+      {(timed || isFacilitator) && (
+        <div
+          className={`order-last mx-auto flex flex-col gap-2 @lg:float-right @lg:mb-2 @lg:ml-6 ${isFacilitator ? 'w-60' : ''}`}
+        >
           {timed && (
-            <p className="mt-1 text-[14px] text-muted">
-              A soft clock: it chimes at zero and never cuts anyone off.
-            </p>
+            <div className="mx-auto mb-2">
+              <RingTimer
+                remaining={remaining}
+                totalMs={totalMs}
+                paused={state.paused_remaining_ms !== null}
+                size={formatClock(totalMs).length > 4 ? 240 : 200}
+                urgentMs={10_000}
+              />
+            </div>
           )}
-          {merged.length > 0 && (
-            <p className="mt-2 text-[16px] break-words">
-              <b>Merged in:</b> {merged.map((c) => `${c.text} (${c.author_name})`).join('; ')}
-            </p>
+          {isFacilitator && (
+            <>
+              {/* Narrower padding, so the three fit under the ring. */}
+              {timed && (
+                <div className="[&_button]:min-w-0 [&_button]:px-2">
+                  <TimerButtons ctx={ctx} addSeconds={15} />
+                </div>
+              )}
+              <Button disabled={!next} onClick={() => onPitch(next?.id ?? null)}>
+                {next ? 'Next pitch' : 'Last pitch done'}
+              </Button>
+              <Button variant="secondary" onClick={() => onPitch(null)}>
+                Stop pitching
+              </Button>
+            </>
           )}
-        </div>
-      </div>
-      {isFacilitator && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {timed && <TimerButtons ctx={ctx} addSeconds={15} />}
-          <Button disabled={!next} onClick={() => onPitch(next?.id ?? null)}>
-            {next ? 'Next pitch' : 'Last pitch done'}
-          </Button>
-          <Button variant="secondary" onClick={() => onPitch(null)}>
-            Stop pitching
-          </Button>
         </div>
       )}
-    </>
+      <div className="flex flex-wrap gap-2">
+        <span className={ACCENT_CHIP}>
+          PITCH {number} OF {count}
+        </span>
+      </div>
+      <div className="min-w-0 @lg:mt-3">
+        <h1 ref={heading} tabIndex={-1} dir="auto" className={FOCUS_TITLE}>
+          {topic.text}
+        </h1>
+        <p className="mt-2 text-[17px] wrap-anywhere text-muted">
+          <b className="text-ink">
+            <bdi>{topic.author_name}</bdi>
+          </b>{' '}
+          is pitching it in a sentence or two
+        </p>
+        {timed && (
+          <p className="mt-1 text-[14px] text-muted">
+            A soft clock: it chimes at zero and never cuts anyone off.
+          </p>
+        )}
+        {merged.length > 0 && (
+          <p className="mt-2 text-[16px] wrap-anywhere">
+            <b>Merged in:</b>{' '}
+            {merged.map((c, i) => (
+              <span key={c.id}>
+                {i > 0 && '; '}
+                <bdi>{c.text}</bdi> (<bdi>{c.author_name}</bdi>)
+              </span>
+            ))}
+          </p>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -466,9 +518,11 @@ function MergeStage({
     return (
       <div className="min-w-0 rounded-xl border-2 border-line bg-surface p-4 dark:bg-ground">
         <p className={CARD_TAG}>{tag}</p>
-        <p className="mt-1 text-[20px] leading-snug font-bold break-words">{t.text}</p>
-        <p className="mt-1 text-[14px] text-muted">
-          {t.author_name}
+        <p dir="auto" className="mt-1 text-[20px] leading-snug font-bold wrap-anywhere">
+          {t.text}
+        </p>
+        <p className="mt-1 text-[14px] wrap-anywhere text-muted">
+          <bdi>{t.author_name}</bdi>
           {carried > 0 && ` · ${plural(carried, 'card')} merged in`}
         </p>
       </div>
@@ -479,17 +533,13 @@ function MergeStage({
       <div className="flex flex-wrap gap-2">
         <span className={ACCENT_CHIP}>TIDYING UP</span>
       </div>
-      <h1
-        ref={heading}
-        tabIndex={-1}
-        className="mt-3 text-[36px] leading-[1.1] font-extrabold tracking-tight"
-      >
+      <h1 ref={heading} tabIndex={-1} className={`mt-3 ${STAGE_TITLE}`}>
         Merge these two?
       </h1>
       <p className="mt-2 text-[16px] text-muted">
         Votes are not split between near-duplicates. You can undo until voting starts.
       </p>
-      <div className="mt-4 grid gap-3 @lg:grid-cols-2">
+      <div className="mt-4 grid grid-cols-1 gap-3 @lg:grid-cols-2">
         {side('KEEPS ITS PLACE', target)}
         {side('JOINS IT', source)}
       </div>
@@ -527,11 +577,7 @@ function TidyStage({
       <div className="flex flex-wrap gap-2">
         <span className={ACCENT_CHIP}>EVERY CARD FACE UP</span>
       </div>
-      <h1
-        ref={heading}
-        tabIndex={-1}
-        className="mt-3 text-[36px] leading-[1.1] font-extrabold tracking-tight"
-      >
+      <h1 ref={heading} tabIndex={-1} className={`mt-3 ${STAGE_TITLE}`}>
         Here is everything the group wrote
       </h1>
       <p className="mt-2 text-[16px] text-muted">
@@ -549,8 +595,8 @@ function TidyStage({
             one you select keeps its place. You can undo a merge until voting starts.
           </p>
           {first && (
-            <p className="mt-2 text-[15px] font-bold break-words">
-              Selected "{first.text}". Select one more card to merge with it.
+            <p className="mt-2 text-[15px] font-bold wrap-anywhere">
+              Selected "<bdi>{first.text}</bdi>". Select one more card to merge with it.
             </p>
           )}
           <div className="mt-4 flex flex-wrap gap-2">
@@ -572,50 +618,40 @@ function TidyStage({
   )
 }
 
-/** The facilitator's way on: the suggested dots and Continue to voting. */
-function NextStep({
-  ctx,
-  count,
-  onVote,
-}: {
-  ctx: PhaseProps['ctx']
-  count: number
-  onVote: () => void
-}) {
+/** Before voting, for the facilitator: the suggested dots, and what Continue to voting opens. */
+function NextStep({ ctx, count }: { ctx: PhaseProps['ctx']; count: number }) {
   const { state, act } = ctx
   const dots = suggestDots(count)
   const using = state.settings.dots === dots
   return (
-    <div className="mt-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-4 border-t-2 border-line-soft pt-4">
+    <div className="mt-5 border-t-2 border-line-soft pt-4">
       {count > 0 && (
-        <div className="min-w-0 grow basis-64">
+        <>
           <Eyebrow>Dots per person: {state.settings.dots} each</Eyebrow>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-2">
             <p className="text-[15px]">
               Suggested: {dots} {dots === 1 ? 'dot' : 'dots'} each (topics / 2, at most 5)
             </p>
-            {/* Stays on screen once applied, so keyboard focus is not lost. */}
+            {/* Not disabled once applied: the button keeps keyboard focus. */}
             <Button
               variant="secondary"
-              disabled={using}
-              onClick={() =>
-                act('update_settings', { p_board: state.board_id, p_settings: { dots } })
+              className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+              aria-disabled={using || undefined}
+              onClick={
+                using
+                  ? undefined
+                  : () => act('update_settings', { p_board: state.board_id, p_settings: { dots } })
               }
             >
               {using ? 'Using' : 'Use'} {dots} {dots === 1 ? 'dot' : 'dots'}
             </Button>
           </div>
-        </div>
+        </>
       )}
-      <div>
-        <Button className="w-full" onClick={onVote}>
-          Continue to voting
-        </Button>
-        <p className="mt-1 text-[13px] text-muted">
-          Opens {state.settings.dots} dots each and a {formatClock(state.settings.vote_s * 1000)}{' '}
-          clock.
-        </p>
-      </div>
+      <p className="mt-2 text-[14px] text-muted">
+        Continue to voting opens {plural(state.settings.dots, 'dot')} each and a{' '}
+        {formatClock(state.settings.vote_s * 1000)} clock.
+      </p>
     </div>
   )
 }

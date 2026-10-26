@@ -13,6 +13,9 @@ const SIZES = [
   [1280, 720],
   [1440, 900],
 ] as const
+// The longest topic the database takes (160 characters).
+const LONG =
+  'How do we make sure the written async updates we post every Friday actually get read by the people who need them and then get acted on before the next planning?'
 const region = (page: Page, name: string) => page.getByRole('region', { name, exact: true })
 const btn = (page: Page, name: string) => page.getByRole('button', { name, exact: true })
 // The phase's live line is the last status in the page's main; the people button has one too.
@@ -167,8 +170,9 @@ test('Brainstorm and Clarify as the board', async ({ browser }) => {
   await expect(region(pat, 'Discussed').getByRole('heading', { level: 2 })).toHaveText(
     'Discussed 0',
   )
-  for (const page of [fran, pat]) await onTheShare(page, 'Brainstorm', 36)
+  for (const page of [fran, pat]) await onTheShare(page, 'Brainstorm', 32)
   await expect(btn(fran, 'Start the 5:00 clock')).toBeInViewport({ ratio: 1 })
+  await expect(btn(fran, 'Add topic')).toBeInViewport({ ratio: 1 })
   await expect(pat.getByLabel('New topic')).toBeInViewport({ ratio: 1 })
   await expect(btn(pat, 'Add topic')).toBeInViewport({ ratio: 1 })
   await shoot(fran, 'brainstorm-stopped-facilitator')
@@ -201,7 +205,7 @@ test('Brainstorm and Clarify as the board', async ({ browser }) => {
   await pat.getByLabel('New topic').fill(patTopics[2] ?? '')
   await pat.getByLabel('New topic').press('Enter')
   await expect(patColumn.getByText(patTopics[2] ?? '', { exact: true })).toBeVisible()
-  for (const page of [fran, pat]) await onTheShare(page, 'Brainstorm', 36)
+  for (const page of [fran, pat]) await onTheShare(page, 'Brainstorm', 32)
   await expect(btn(fran, 'Pause')).toBeInViewport({ ratio: 1 })
   await shoot(fran, 'brainstorm-running-facilitator')
   await shoot(pat, 'brainstorm-running-participant')
@@ -263,16 +267,17 @@ test('Brainstorm and Clarify as the board', async ({ browser }) => {
   // Merge: select two cards, the merge is on stage; it stacks the card under the first one.
   const [onboard, ai, pairing] = patTopics as [string, string, string]
   const [async, sayNo] = franTopics as [string, string]
-  await fran.getByRole('button', { name: new RegExp(async.replace(/[.?]/g, '\\$&')) }).click()
+  // The card is the select button; Edit and Delete are named "Edit "topic"" and so on.
+  await fran.getByRole('button', { name: new RegExp(`^${async.replace(/[.?]/g, '\\$&')}`) }).click()
   await expect(franStage).toContainText(`Selected "${async}". Select one more card`)
-  await fran.getByRole('button', { name: /Pairing vs\. async code review/ }).click()
+  await fran.getByRole('button', { name: /^Pairing vs\. async code review/ }).click()
   await expect(live(fran)).toHaveText(
     'Two cards selected. Merge them or keep them separate on the stage.',
   )
   await expect(fran.getByRole('heading', { level: 1 })).toHaveText('Merge these two?')
   await expect(franStage).toContainText(`KEEPS ITS PLACE${async}Fran`)
   await expect(franStage).toContainText(`JOINS IT${pairing}Pat`)
-  await expect(fran.getByRole('button', { name: /async/ })).toHaveCount(2)
+  await expect(fran.getByRole('button', { name: /async/, pressed: true })).toHaveCount(2)
   await shoot(fran, 'clarify-merge-facilitator')
   await axeBoth(fran, 'clarify merge, facilitator')
   await btn(fran, 'Merge 2 selected').click()
@@ -291,6 +296,8 @@ test('Brainstorm and Clarify as the board', async ({ browser }) => {
   await btn(fran, 'Undo merge').click()
   await expect(stack).toHaveCount(0)
   await expect(live(pat)).toHaveText(`"${pairing}" is a card of its own again.`)
+  // Undo merge leaves with the stack; focus goes to the card that came out of it.
+  await expect(fran.getByRole('button', { name: /^Pairing vs\. async code review/ })).toBeFocused()
 
   // Pitches: the card being pitched is the page heading at 44 px with its soft clock.
   await btn(fran, 'Start pitches').click()
@@ -311,6 +318,7 @@ test('Brainstorm and Clarify as the board', async ({ browser }) => {
   await expect(btn(fran, 'Skip pitches')).toHaveCount(0)
   for (const page of [fran, pat]) await onTheShare(page, 'Clarify', 44)
   await expect(btn(fran, 'Next pitch')).toBeInViewport({ ratio: 1 })
+  await expect(btn(fran, 'Continue to voting')).toBeInViewport({ ratio: 1 })
   await shoot(fran, 'clarify-pitching-facilitator')
   await shoot(pat, 'clarify-pitching-participant')
   await axeBoth(fran, 'clarify pitching, facilitator')
@@ -318,11 +326,27 @@ test('Brainstorm and Clarify as the board', async ({ browser }) => {
   await phoneOrder(pat, 'Clarify', 'clarify-participant')
   await phoneOrder(fran, 'Clarify', 'clarify-facilitator')
 
+  // The longest topic on stage: the facilitator's pitch buttons sit under the ring and Continue
+  // to voting is in the toolbar, so they stay on the share; the topic stays at 44 px.
+  await btn(fran, `Edit "${ai}"`).click()
+  await fran.getByRole('textbox', { name: 'Edit topic' }).fill(LONG)
+  await fran.getByRole('textbox', { name: 'Edit topic' }).press('Enter')
+  await expect(pat.getByRole('heading', { level: 1, name: LONG })).toBeVisible()
+  for (const page of [fran, pat]) await onTheShare(page, 'Clarify', 44)
+  for (const name of ['Pause', 'Next pitch', 'Stop pitching', 'Continue to voting'])
+    await expect(btn(fran, name)).toBeInViewport({ ratio: 1 })
+  await fran.screenshot({ path: `${SHOTS}/clarify-pitching-long-facilitator-light-1280x720.png` })
+  await pat.screenshot({ path: `${SHOTS}/clarify-pitching-long-participant-light-1280x720.png` })
+  await btn(fran, `Edit "${LONG}"`).click()
+  await fran.getByRole('textbox', { name: 'Edit topic' }).fill(ai)
+  await fran.getByRole('textbox', { name: 'Edit topic' }).press('Enter')
+  await expect(pat.getByRole('heading', { level: 1, name: ai })).toBeVisible()
+
   // Participants get none of the facilitator's controls.
   for (const name of [
     /^Pause$/,
     /^(Next pitch|Stop pitching|Start pitches|Skip pitches)$/,
-    /^(Edit|Delete|Undo merge)$/,
+    /^(Edit|Delete) "|^Undo merge$/,
     /^(Use|Using) \d dots?$/,
     /^Continue to voting$/,
   ])
@@ -330,26 +354,16 @@ test('Brainstorm and Clarify as the board', async ({ browser }) => {
   await expect(patColumn.getByRole('button')).toHaveCount(0)
 
   // Edit and Delete from the column: no Delete on the card being pitched.
-  const pitched = franColumn.getByRole('listitem').filter({ hasText: ai })
-  await expect(pitched.getByRole('button', { name: 'Delete', exact: true })).toHaveCount(0)
-  const saying = franColumn.getByRole('listitem').filter({ hasText: sayNo })
-  await saying.getByRole('button', { name: 'Edit', exact: true }).click()
+  await expect(btn(fran, `Delete "${ai}"`)).toHaveCount(0)
+  await expect(btn(fran, `Edit "${ai}"`)).toBeVisible()
+  await btn(fran, `Edit "${sayNo}"`).click()
   const box = fran.getByRole('textbox', { name: 'Edit topic' })
   await expect(box).toBeFocused()
   await box.fill('Saying no without burning trust')
   await box.press('Enter')
   await expect(patColumn).toContainText('Saying no without burning trust')
-  await expect(
-    franColumn
-      .getByRole('listitem')
-      .filter({ hasText: 'Saying no without burning trust' })
-      .getByRole('button', { name: 'Edit', exact: true }),
-  ).toBeFocused()
-  await franColumn
-    .getByRole('listitem')
-    .filter({ hasText: 'Saying no without burning trust' })
-    .getByRole('button', { name: 'Delete', exact: true })
-    .click()
+  await expect(btn(fran, 'Edit "Saying no without burning trust"')).toBeFocused()
+  await btn(fran, 'Delete "Saying no without burning trust"').click()
   const confirm = fran.getByRole('dialog', { name: 'Delete this topic?' })
   await confirm.getByRole('button', { name: 'Delete topic' }).click()
   await expect(confirm).toBeHidden()
@@ -363,7 +377,9 @@ test('Brainstorm and Clarify as the board', async ({ browser }) => {
   await expect(live(pat)).toHaveText('Pitches stopped.')
   await btn(fran, 'Use 2 dots').click()
   await expect(btn(fran, 'Using 2 dots')).toBeDisabled()
-  await expect(franStage).toContainText('Opens 2 dots each and a 1:30 clock.')
+  // aria-disabled, not disabled: the button keeps keyboard focus once the suggestion applies.
+  await expect(btn(fran, 'Using 2 dots')).toBeFocused()
+  await expect(franStage).toContainText('Continue to voting opens 2 dots each and a 1:30 clock.')
   await btn(fran, 'Continue to voting').click()
   await expect(
     pat.getByRole('navigation', { name: 'Session progress' }).locator('[aria-current="step"]'),

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { makeCtx, topic } from '../../test/boardContext'
 import Clarify from './Clarify'
 
@@ -34,8 +34,28 @@ describe('Clarify dots suggestion (spec section 3)', () => {
       <Clarify ctx={makeCtx({ state: clarify, topics, settings: { dots: 2 } })} remaining={null} />,
     )
     expect(screen.getByText('Suggested: 2 dots each (topics / 2, at most 5)')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Using 2 dots' })).toBeDisabled()
-    expect(screen.getByText('Opens 2 dots each and a 1:30 clock.')).toBeInTheDocument()
+    // Not disabled, so keyboard focus stays on it once applied; it does nothing more.
+    const using = screen.getByRole('button', { name: 'Using 2 dots' })
+    expect(using).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(using)
+    expect(screen.getByText('Continue to voting opens 2 dots each and a 1:30 clock.')).toBeVisible()
+  })
+
+  it('keeps focus on the button once the suggestion is applied', () => {
+    const topics = [topic('t1', 'One'), topic('t2', 'Two'), topic('t3', 'Three')]
+    const ctx = makeCtx({ state: clarify, topics })
+    const { rerender } = render(<Clarify ctx={ctx} remaining={null} />)
+    const use = screen.getByRole('button', { name: 'Use 2 dots' })
+    use.focus()
+    fireEvent.click(use)
+    expect(ctx.act).toHaveBeenCalledWith('update_settings', {
+      p_board: 'b1',
+      p_settings: { dots: 2 },
+    })
+    rerender(
+      <Clarify ctx={makeCtx({ state: clarify, topics, settings: { dots: 2 } })} remaining={null} />,
+    )
+    expect(screen.getByRole('button', { name: 'Using 2 dots' })).toHaveFocus()
   })
 
   it('never suggests fewer than one dot', () => {
@@ -99,28 +119,28 @@ describe('Clarify as the board', () => {
     const ctx = makeCtx({ state: clarify, topics })
     render(<Clarify ctx={ctx} remaining={null} />)
     expect(stage()).toHaveTextContent('To tidy up, select two cards that say the same thing')
-    const first = screen.getByRole('button', { name: /Code review turnaround/ })
+    const first = screen.getByRole('button', { name: /^Code review turnaround/ })
     fireEvent.click(first)
     expect(first).toHaveAttribute('aria-pressed', 'true')
     expect(first).toHaveTextContent('SELECTED')
     expect(stage()).toHaveTextContent('Selected "Code review turnaround". Select one more card')
-    fireEvent.click(screen.getByRole('button', { name: /Retro cadence/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Retro cadence/ }))
     expect(liveLine()).toHaveTextContent(
       'Two cards selected. Merge them or keep them separate on the stage.',
     )
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Merge these two?')
     expect(stage()).toHaveTextContent('KEEPS ITS PLACECode review turnaroundPat')
     expect(stage()).toHaveTextContent('JOINS ITRetro cadenceFran')
-    // The topics on stage are words, not buttons: the card stays the only button named after it.
-    expect(screen.getAllByRole('button', { name: /Code review turnaround/ })).toHaveLength(1)
+    // The topics on stage are words, not buttons.
+    expect(within(stage()).queryAllByRole('button', { name: /Code review turnaround/ })).toEqual([])
     fireEvent.click(screen.getByRole('button', { name: 'Merge 2 selected' }))
     expect(ctx.act).toHaveBeenCalledWith('merge_topics', { p_source: 't2', p_target: 't1' })
   })
 
   it('Keep separate clears the selection and focus goes to the stage heading', async () => {
     render(<Clarify ctx={makeCtx({ state: clarify, topics })} remaining={null} />)
-    fireEvent.click(screen.getByRole('button', { name: /Code review turnaround/ }))
-    fireEvent.click(screen.getByRole('button', { name: /Retro cadence/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Code review turnaround/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Retro cadence/ }))
     const keep = screen.getByRole('button', { name: 'Keep separate' })
     keep.focus()
     fireEvent.click(keep)
@@ -128,7 +148,7 @@ describe('Clarify as the board', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
       'Here is everything the group wrote',
     )
-    expect(screen.getByRole('button', { name: /Code review turnaround/ })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /^Code review turnaround/ })).toHaveAttribute(
       'aria-pressed',
       'false',
     )
@@ -137,8 +157,8 @@ describe('Clarify as the board', () => {
   it('says on the merge stage which cards already carry merged cards', () => {
     const merged = [...topics, topic('t3', 'Slow reviews', 'u2', { merged_into: 't2' })]
     render(<Clarify ctx={makeCtx({ state: clarify, topics: merged })} remaining={null} />)
-    fireEvent.click(screen.getByRole('button', { name: /Code review turnaround/ }))
-    fireEvent.click(screen.getByRole('button', { name: /Retro cadence/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Code review turnaround/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Retro cadence/ }))
     expect(stage()).toHaveTextContent('JOINS ITRetro cadenceFran · 1 card merged in')
     expect(stage()).toHaveTextContent('KEEPS ITS PLACECode review turnaroundPatJOINS IT')
   })
@@ -152,8 +172,26 @@ describe('Clarify as the board', () => {
     expect(screen.getByText('2 topics')).toHaveTextContent('2 topics · 1 card merged')
     const undo = within(stack).getByRole('button', { name: 'Undo merge' })
     expect(undo).toHaveAccessibleDescription('+ Slow reviews (Pat)')
+    expect(undo).toHaveClass('text-[15px]')
     fireEvent.click(undo)
     expect(ctx.act).toHaveBeenCalledWith('unmerge_topic', { p_topic: 't3' })
+  })
+
+  it('moves focus to the card taken out of a stack, as its Undo merge goes', async () => {
+    const merged = [...topics, topic('t3', 'Slow reviews', 'u2', { merged_into: 't1' })]
+    const ctx = makeCtx({ state: clarify, topics: merged })
+    const { rerender } = render(<Clarify ctx={ctx} remaining={null} />)
+    const undo = screen.getByRole('button', { name: 'Undo merge' })
+    undo.focus()
+    await act(async () => fireEvent.click(undo))
+    const apart = [...topics, topic('t3', 'Slow reviews', 'u2')]
+    rerender(
+      <Clarify
+        ctx={{ ...ctx, board: { ...ctx.board, data: { ...ctx.board.data, topics: apart } } }}
+        remaining={null}
+      />,
+    )
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Slow reviews/ })).toHaveFocus())
   })
 
   it('gives participants the board and the stage, but no controls', () => {
@@ -190,26 +228,28 @@ describe('Clarify as the board', () => {
 describe('Clarify facilitator edit and delete', () => {
   const topics = [topic('t1', 'Code review turnaround'), topic('t2', 'Retro cadence')]
 
-  it('keeps the card button the only one named after the topic', () => {
+  it('names Edit and Delete after the topic, as on every other phase', () => {
     render(<Clarify ctx={makeCtx({ state: clarify, topics })} remaining={null} />)
-    expect(screen.getAllByRole('button', { name: /Code review turnaround/ })).toHaveLength(1)
-    const edits = screen.getAllByRole('button', { name: 'Edit' })
-    expect(edits[0]).toHaveAccessibleDescription('Code review turnaround')
+    expect(
+      screen.getAllByRole('button', { name: /Code review turnaround/ }).map((b) => b.textContent),
+    ).toEqual(['Code review turnaroundPat', 'Edit', 'Delete'])
+    expect(screen.getByRole('button', { name: 'Edit "Code review turnaround"' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Delete "Code review turnaround"' })).toBeVisible()
   })
 
   it('edits a topic inline with a counter; Escape cancels and returns to Edit', () => {
     const ctx = makeCtx({ state: clarify, topics })
     render(<Clarify ctx={ctx} remaining={null} />)
-    fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[1] as HTMLElement)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit "Retro cadence"' }))
     const box = screen.getByRole('textbox', { name: 'Edit topic' })
     expect(box).toHaveFocus()
     expect(box).toHaveAccessibleDescription('13 of 160 characters')
     fireEvent.keyDown(box, { key: 'Escape' })
     expect(screen.queryByRole('textbox', { name: 'Edit topic' })).toBeNull()
-    expect(screen.getAllByRole('button', { name: 'Edit' })[1]).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Edit "Retro cadence"' })).toHaveFocus()
     expect(ctx.act).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[1] as HTMLElement)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit "Retro cadence"' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Edit topic' }), {
       target: { value: 'Retro cadence and format' },
     })
@@ -224,7 +264,7 @@ describe('Clarify facilitator edit and delete', () => {
   it('asks before deleting a topic, then focuses the column heading', async () => {
     const ctx = makeCtx({ state: clarify, topics })
     render(<Clarify ctx={ctx} remaining={null} />)
-    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0] as HTMLElement)
+    fireEvent.click(screen.getByRole('button', { name: 'Delete "Code review turnaround"' }))
     const dialog = screen.getByRole('dialog', { name: 'Delete this topic?' })
     expect(dialog).toHaveTextContent('Code review turnaround')
     expect(dialog).toHaveTextContent('It is removed for everyone')
@@ -236,8 +276,7 @@ describe('Clarify facilitator edit and delete', () => {
 
   it('gives participants no edit or delete controls', () => {
     render(<Clarify ctx={makeCtx({ userId: 'u2', state: clarify, topics })} remaining={null} />)
-    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^(Edit|Delete) "/ })).toBeNull()
   })
 })
 
@@ -274,6 +313,25 @@ describe('Clarify pitches', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove 15 seconds' }))
     expect(ctx.act).toHaveBeenCalledWith('timer_adjust', { p_board: 'b1', p_delta_s: -15 })
     expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled()
+  })
+
+  it('lays out the pitched topic in its own direction', () => {
+    render(<Clarify ctx={makeCtx({ state: pitching('t1'), topics })} remaining={20_000} />)
+    expect(screen.getByRole('heading', { level: 1 })).toHaveAttribute('dir', 'auto')
+  })
+
+  it('puts the pitch buttons with the ring, and Continue to voting in the toolbar', () => {
+    const ctx = makeCtx({ state: pitching('t1'), topics })
+    render(<Clarify ctx={ctx} remaining={20_000} />)
+    // The ring and its buttons float beside the topic, so the buttons come before it.
+    const h1 = screen.getByRole('heading', { level: 1 })
+    for (const name of ['Pause', 'Next pitch', 'Stop pitching']) {
+      const button = within(stage()).getByRole('button', { name })
+      expect(button.compareDocumentPosition(h1) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
+    expect(within(stage()).queryByRole('button', { name: 'Continue to voting' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to voting' }))
+    expect(ctx.act).toHaveBeenCalledWith('start_phase', { p_board: 'b1', p_phase: 'vote' })
   })
 
   it('steps to the next card, and is done on the last', () => {
@@ -325,7 +383,7 @@ describe('Clarify skip pitches', () => {
     expect(screen.queryByRole('button', { name: 'Skip pitches' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Stop pitching' }))
     expect(ctx.act).toHaveBeenCalledWith('set_pitch', { p_board: 'b1', p_topic: null })
-    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: /^Delete "/ })).toHaveLength(1)
   })
 
   it('says so when nobody added a topic, and still offers voting', () => {

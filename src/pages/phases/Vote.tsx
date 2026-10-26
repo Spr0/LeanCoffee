@@ -38,6 +38,10 @@ import { agendaTies, voteCounts, type VoteCounts } from './VoteRanking'
 // A panel inside the stage. In dark mode --surface equals --panel, so it sits on the ground.
 const PANEL = 'rounded-xl bg-surface p-4 dark:bg-ground'
 const TIED = 'rounded bg-teal-soft px-2 py-0.5 text-[13px] font-bold text-teal'
+// The stage's page heading: 32 px when it says what to do, as in every phase, and 44 px for the
+// Teams share when it is the topic in focus.
+const STAGE_TITLE = 'text-[32px] leading-tight font-extrabold tracking-tight'
+const FOCUS_TITLE = 'text-[44px] leading-[1.08] font-extrabold tracking-tight wrap-anywhere'
 
 function omit(record: Record<string, number>, key: string): Record<string, number> {
   return Object.fromEntries(Object.entries(record).filter(([k]) => k !== key))
@@ -301,11 +305,7 @@ function VotingStage({
             </span>
             <span className={CHIP}>Counts hidden until reveal</span>
           </div>
-          <h1
-            ref={heading}
-            tabIndex={-1}
-            className="mt-3 text-[32px] leading-tight font-extrabold tracking-tight"
-          >
+          <h1 ref={heading} tabIndex={-1} className={`mt-3 ${STAGE_TITLE}`}>
             {tieRound
               ? 'Tie-break: one dot for the topic you most want first'
               : budget === 1
@@ -397,7 +397,12 @@ function VotingStage({
   )
 }
 
-/** The stage after the reveal: the agenda, any ties for the facilitator, and what is up next. */
+/**
+ * The stage after the reveal, laid out as Discuss's Up next so a long topic and Start discussing
+ * stay on a 720 px share: the next topic as the page heading at 44 px, who raised it with its
+ * dots, Start discussing, then the facilitator's tie tools. Measured with a 160-character topic,
+ * Start discussing ends above 720 px; the tie tools may then sit below it.
+ */
 function ResultsStage({
   ctx,
   open,
@@ -419,28 +424,43 @@ function ResultsStage({
   const dots = (id: string) => counts.main.get(id) ?? 0
   return (
     <>
-      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-        <div className="min-w-0 grow basis-64">
-          <h1
-            ref={heading}
-            tabIndex={-1}
-            className="text-[32px] leading-tight font-extrabold tracking-tight"
-          >
-            Here is the agenda
-          </h1>
-          <p className="mt-2 text-[16px] text-muted">
-            Topics are ordered by dots, then by any tie-break.
-          </p>
-        </div>
-        {isFacilitator && (
-          <Button
-            className="h-14 px-8 text-[17px]"
-            onClick={() => act('start_phase', { p_board: state.board_id, p_phase: 'discuss' })}
-          >
-            Start discussing
-          </Button>
-        )}
+      <div className="flex flex-wrap gap-2">
+        <span className={ACCENT_CHIP}>AGENDA</span>
+        {first && <span className={`${CHIP} font-extrabold tracking-[0.08em]`}>UP NEXT</span>}
       </div>
+      {first ? (
+        <>
+          <h1 ref={heading} tabIndex={-1} dir="auto" className={`mt-3 ${FOCUS_TITLE}`}>
+            {first.text}
+          </h1>
+          <p className="mt-2 text-[17px] wrap-anywhere text-muted">
+            Raised by{' '}
+            <b className="text-ink">
+              <bdi>{first.author_name}</bdi>
+            </b>{' '}
+            · {plural(dots(first.id), 'vote')}
+          </p>
+        </>
+      ) : (
+        <>
+          <h1 ref={heading} tabIndex={-1} className={`mt-3 ${STAGE_TITLE}`}>
+            No topics are left to discuss
+          </h1>
+          <p className="mt-2 text-[17px] text-muted">Anyone can add one in Discuss.</p>
+        </>
+      )}
+      {isFacilitator ? (
+        <Button
+          className="mt-3 h-12 px-8 text-[17px]"
+          onClick={() => act('start_phase', { p_board: state.board_id, p_phase: 'discuss' })}
+        >
+          Start discussing
+        </Button>
+      ) : (
+        <p className="mt-3 text-[17px] font-bold">
+          Waiting for the facilitator to start discussing.
+        </p>
+      )}
       {groups.length > 0 &&
         (isFacilitator ? (
           <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border-2 border-line p-4">
@@ -482,27 +502,9 @@ function ResultsStage({
             Topics marked TIED have the same dots. The facilitator puts them in order.
           </p>
         ))}
-      {first ? (
-        <div className="mt-6">
-          <span className={`${CHIP} font-extrabold tracking-[0.08em]`}>UP NEXT</span>
-          <p className="mt-3 text-[44px] leading-[1.08] font-extrabold tracking-tight break-words">
-            {first.text}
-          </p>
-          <p className="mt-2 text-[17px] text-muted">
-            Raised by <b className="text-ink">{first.author_name}</b> ·{' '}
-            {plural(dots(first.id), 'vote')}
-          </p>
-        </div>
-      ) : (
-        <p className="mt-6 text-[17px] text-muted">
-          No topics are left to discuss. Anyone can add one in Discuss.
-        </p>
-      )}
-      {!isFacilitator && (
-        <p className="mt-6 text-[17px] font-bold">
-          Waiting for the facilitator to start discussing.
-        </p>
-      )}
+      <p className="mt-3 text-[14px] text-muted">
+        To discuss is the agenda, ordered by dots, then by any tie-break.
+      </p>
     </>
   )
 }
@@ -592,9 +594,11 @@ function TopicsColumn({
           <ul aria-labelledby={skippedId} className="mt-2 flex flex-col gap-2">
             {skipped.map((t) => (
               <li key={t.id} className="rounded-xl border-2 border-dashed border-line bg-panel p-3">
-                <p className="text-[15px] leading-snug break-words">{t.text}</p>
-                <p className="mt-1 text-[13px] text-muted">
-                  {t.author_name} · {plural(earlier.get(t.id) ?? 0, 'vote')}
+                <p dir="auto" className="text-[15px] leading-snug wrap-anywhere">
+                  {t.text}
+                </p>
+                <p className="mt-1 text-[13px] wrap-anywhere text-muted">
+                  <bdi>{t.author_name}</bdi> · {plural(earlier.get(t.id) ?? 0, 'vote')}
                 </p>
                 <ActionList ctx={ctx} topic={t} actions={own(t)} />
               </li>
@@ -671,13 +675,15 @@ function VoteCard({
             {rank}
           </span>
         )}
-        <p className="min-w-0 flex-1 text-[15px] leading-snug font-bold break-words">{t.text}</p>
+        <p dir="auto" className="min-w-0 flex-1 text-[15px] leading-snug font-bold wrap-anywhere">
+          {t.text}
+        </p>
       </div>
       <p
         className={`mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted ${counts ? 'pl-7' : ''}`}
       >
-        <span>
-          {t.author_name}
+        <span className="min-w-0 wrap-anywhere">
+          <bdi>{t.author_name}</bdi>
           {counts && (
             <>
               {' · '}
