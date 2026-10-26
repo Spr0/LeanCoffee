@@ -51,18 +51,20 @@ test('skip and bring back, edit and delete, downloads, owners and the move-on ov
   await fran.getByRole('button', { name: 'Continue to voting' }).click()
   await fran.getByRole('button', { name: 'Reveal results now' }).click()
 
-  // Downloads appear for everyone once the votes are revealed (F24).
+  // Downloads appear for everyone once the votes are revealed (F24), in the toolbar as in Discuss.
   await expect(pat.getByRole('heading', { name: 'Here is the agenda' })).toBeVisible()
   for (const page of [fran, pat]) {
-    await expect(page.getByRole('heading', { name: 'Download the results' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Download Word file' })).toBeEnabled()
-    await expect(page.getByRole('button', { name: 'Download Excel file' })).toBeEnabled()
+    await page.getByRole('button', { name: 'Downloads', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Download the results' })
+    await expect(dialog.getByRole('button', { name: 'Download Word file' })).toBeEnabled()
+    await expect(dialog.getByRole('button', { name: 'Download Excel file' })).toBeEnabled()
   }
   const [file] = await Promise.all([
     pat.waitForEvent('download'),
     pat.getByRole('button', { name: 'Download Excel file' }).click(),
   ])
   expect(file.suggestedFilename()).toMatch(/^E2E launch ui-a \d+ \d{4}-\d{2}-\d{2}\.xlsx$/)
+  for (const page of [fran, pat]) await page.keyboard.press('Escape')
   await fran.getByRole('button', { name: 'Start discussing' }).click()
   await fran.getByRole('button', { name: /Start the .* clock/ }).click()
   await expect(stage(pat)).toContainText('Alpha topic')

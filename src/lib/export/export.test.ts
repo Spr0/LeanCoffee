@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { Packer } from 'docx'
 import type { BoardData } from '../../state/useBoard'
+import { boardTotals } from '../session'
 import type { BoardState, Topic } from '../types'
 import { buildDocument } from './docx'
 import { buildModel } from './model'
@@ -177,6 +178,43 @@ describe('export model', () => {
   })
   it('omits passed take-aways', () => {
     expect(m.takeaways).toEqual([{ name: 'Ana', text: '@everyone read the doc' }])
+  })
+
+  it('gives each topic the same dots as the board after a re-vote', () => {
+    // Round 0 ranked everything; the re-vote (round 1) covered only the open topics.
+    const data = sample()
+    if (!data.state) throw new Error('no state')
+    data.state.base_round = 1
+    data.topics.push(
+      topic('t5', 'Skipped after the first vote', 'Ana', { status: 'skipped', sort_order: 5 }),
+    )
+    const dot = (id: string, topic_id: string, round: number, dots: number) => ({
+      id,
+      board_id: 'b',
+      topic_id,
+      user_id: 'Dev',
+      round,
+      dots,
+    })
+    data.votes = [
+      dot('v1', 't1', 0, 3),
+      dot('v2', 't2', 0, 1),
+      dot('v3', 't3', 0, 2),
+      dot('v4', 't3', 1, 1),
+      dot('v5', 't5', 0, 4),
+    ]
+    const after = buildModel(data, new Date('2026-10-24T16:30:00Z'))
+    expect(after.discussed.map((t) => t.votes)).toEqual([3, 1])
+    // Not discussed: the skipped topic keeps its 4 from round 0; the open one has its re-vote dot.
+    expect(after.notDiscussed.map((t) => [t.text, t.votes, t.status])).toEqual([
+      ['Skipped after the first vote', 4, 'Skipped'],
+      [XSS, 1, 'Not discussed'],
+    ])
+    const board = boardTotals(data.votes, data.topics, 1)
+    for (const row of after.all) {
+      const id = data.topics.find((t) => row.text.startsWith(t.text) && !t.merged_into)?.id ?? ''
+      expect(row.votes).toBe(board.get(id) ?? 0)
+    }
   })
 })
 
