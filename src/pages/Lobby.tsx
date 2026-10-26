@@ -9,6 +9,9 @@ import { useNow } from '../state/useNow'
 import type { BoardContext } from './BoardView'
 
 const LENGTHS = [30, 45, 60, 75]
+const without = (p: Partial<Settings>, keys: string[]): Partial<Settings> =>
+  Object.fromEntries(Object.entries(p).filter(([k]) => !keys.includes(k)))
+
 const TIE_LABELS: Record<Settings['tie_break'], string> = {
   drag: 'Facilitator decides',
   mini_vote: 'Quick one-dot vote',
@@ -17,7 +20,6 @@ const TIE_LABELS: Record<Settings['tie_break'], string> = {
 
 export default function Lobby({ ctx }: { ctx: BoardContext }) {
   const { board, state, userId, code, isFacilitator, act } = ctx
-  const s = state.settings
   const boardId = state.board_id
   const [editingName, setEditingName] = useState(false)
   const [nameDraft, setNameDraft] = useState(state.name)
@@ -43,8 +45,26 @@ export default function Lobby({ ctx }: { ctx: BoardContext }) {
   const link = inviteLink(code)
   const token = state.owner_user_id === userId ? readRecoveryToken(boardId) : null
 
-  const set = (patch: Partial<Settings>) =>
-    act('update_settings', { p_board: boardId, p_settings: patch })
+  // The rules as the facilitator set them: each press builds on the last value sent, not on what
+  // the server has echoed back yet, so quick presses add up. Entries clear once the server agrees,
+  // or when the call fails. Calls go in press order, and Start brainstorm waits for them.
+  const [pending, setPending] = useState<Partial<Settings>>({})
+  const queue = useRef<Promise<unknown>>(Promise.resolve())
+  const send = (call: () => Promise<unknown>) => (queue.current = queue.current.then(call))
+  const s: Settings = { ...state.settings, ...pending }
+  for (const [key, value] of Object.entries(pending)) {
+    if (state.settings[key as keyof Settings] === value) {
+      setPending((p) => without(p, [key]))
+      break
+    }
+  }
+  const set = (patch: Partial<Settings>) => {
+    setPending((p) => ({ ...p, ...patch }))
+    void send(async () => {
+      if (!(await act('update_settings', { p_board: boardId, p_settings: patch })))
+        setPending((p) => without(p, Object.keys(patch)))
+    })
+  }
 
   return (
     <main className="mx-auto grid w-full max-w-[1440px] gap-10 px-4 py-6 sm:px-10 lg:grid-cols-[1fr_620px]">
@@ -376,7 +396,9 @@ export default function Lobby({ ctx }: { ctx: BoardContext }) {
             )}
             <Button
               className="mt-6 h-14 w-full text-[17px]"
-              onClick={() => act('start_phase', { p_board: boardId, p_phase: 'brainstorm' })}
+              onClick={() =>
+                send(() => act('start_phase', { p_board: boardId, p_phase: 'brainstorm' }))
+              }
             >
               Start brainstorm for {here.length} {here.length === 1 ? 'person' : 'people'}
             </Button>
