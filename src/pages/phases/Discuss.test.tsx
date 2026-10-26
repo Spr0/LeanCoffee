@@ -17,6 +17,8 @@ afterEach(() => vi.clearAllMocks())
 
 const ends = () => new Date(Date.now() + 120_000).toISOString()
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString()
+/** Text on the page, not counting the live line, which repeats some of it. */
+const shown = (text: string) => screen.getByText(text, { ignore: '[role="status"] *' })
 
 function board(status: 'discussing' | 'discussed' = 'discussing', extra: Topic[] = []): Topic[] {
   return [
@@ -77,18 +79,30 @@ describe('Discuss board', () => {
     expect(screen.getByText('1 of 3 discussed')).toBeInTheDocument()
   })
 
-  it('shows the wrap-up reminder in the last 5 minutes', () => {
-    setup('u1', 'discussing', [], { started_at: minutesAgo(71) })
-    const reminder = screen.getByText('About 5 minutes left in the session. Time to wrap up.')
-    expect(reminder.closest('[role="status"]')).not.toBeNull()
+  it('shows the wrap-up reminder in the toolbar in the last 5 minutes, and says it once', () => {
+    const { ctx, view } = setup('u1', 'discussing', [], { started_at: minutesAgo(71.5) })
+    const reminder = shown('About 4 min left. Time to wrap up.')
+    // In the toolbar, beside the session time, so the stage keeps its height on the share.
+    expect(screen.getByText('72 of 75 min').closest('div')).toContainElement(reminder)
+    expect(reminder.closest('[role="status"]')).toBeNull()
     expect(screen.getAllByRole('button', { name: 'Start wrap-up' })).toHaveLength(1)
+    expect(screen.queryByText(/topics? fit/)).toBeNull()
+    const live = () => document.querySelector('main > p[role="status"]')?.textContent
+    expect(live()).toBe('About 4 min left. Time to wrap up.')
+    // Said once: a later render does not repeat it.
+    view.rerender(<Discuss ctx={{ ...ctx }} remaining={110_000} />)
+    expect(live()).toBe('About 4 min left. Time to wrap up.')
+  })
+
+  it('says when the planned time is up, with the real minutes used', () => {
+    setup('u2', 'discussing', [], { started_at: minutesAgo(80) })
+    expect(shown('Past the planned 75 min. Time to wrap up.')).toBeInTheDocument()
+    expect(screen.getByText('80 of 75 min')).toBeInTheDocument()
   })
 
   it('shows participants the wrap-up reminder without its button', () => {
     setup('u2', 'discussing', [], { started_at: minutesAgo(71) })
-    expect(
-      screen.getByText('About 5 minutes left in the session. Time to wrap up.'),
-    ).toBeInTheDocument()
+    expect(shown('About 4 min left. Time to wrap up.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Start wrap-up' })).toBeNull()
   })
 
@@ -203,17 +217,84 @@ describe('Discuss board', () => {
   })
 
   it('sends each way off stage to the server', async () => {
-    const { act, user } = setup('u1')
-    await user.click(screen.getByRole('button', { name: 'Call vote now' }))
-    expect(act).toHaveBeenLastCalledWith('open_extend_round', { p_board: 'b1' })
-    for (const [name, outcome] of [
-      ['Next topic', 'discussed'],
-      ['Defer to later', 'deferred'],
-      ['Skip', 'skipped'],
-    ]) {
+    for (const [name, fn, args] of [
+      ['Call vote now', 'open_extend_round', {}],
+      ['Next topic', 'next_topic', { p_outcome: 'discussed' }],
+      ['Defer to later', 'next_topic', { p_outcome: 'deferred' }],
+      ['Skip', 'next_topic', { p_outcome: 'skipped' }],
+    ] as const) {
+      const { act, user, view } = setup('u1')
       await user.click(screen.getByRole('button', { name }))
-      expect(act).toHaveBeenLastCalledWith('next_topic', { p_board: 'b1', p_outcome: outcome })
+      expect(act).toHaveBeenLastCalledWith(fn, { p_board: 'b1', ...args })
+      view.unmount()
     }
+  })
+
+  it('takes one stage press at a time, until the stage changes', async () => {
+    const { act, ctx, view, user } = setup('u1')
+    const next = screen.getByRole('button', { name: 'Next topic' })
+    await user.dblClick(next)
+    await user.click(screen.getByRole('button', { name: 'Skip' }))
+    expect(act).toHaveBeenCalledTimes(1)
+    // Still focusable, so a keyboard user keeps their place, but marked as not available.
+    expect(next).toHaveAttribute('aria-disabled', 'true')
+    expect(next).not.toBeDisabled()
+    // The stage changes: the next press works.
+    const after = makeCtx('u1', board('discussed'), ctx.act, { phase_ends_at: null })
+    view.rerender(<Discuss ctx={after} remaining={null} />)
+    await user.click(screen.getByRole('button', { name: 'Start the 5:00 clock' }))
+    expect(act).toHaveBeenLastCalledWith('start_discussion', { p_board: 'b1' })
+    expect(act).toHaveBeenCalledTimes(2)
+  })
+
+  it('takes the press again when the server refuses it', async () => {
+    const act = vi.fn(async () => false)
+    const ctx = makeCtx('u1', board(), act, { phase_ends_at: ends() })
+    render(<Discuss ctx={ctx} remaining={120_000} />)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Next topic' }))
+    await user.click(screen.getByRole('button', { name: 'Next topic' }))
+    expect(act).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('button', { name: 'Next topic' })).not.toHaveAttribute('aria-disabled')
+  })
+
+  it('keeps a half-typed action, and its focus, when the topic leaves the stage', async () => {
+    const { ctx, view, user } = setup('u2')
+    await user.type(screen.getByLabelText('New action'), 'Send the checklist to')
+    const after = makeCtx('u2', board('discussed'), ctx.act, { phase_ends_at: null })
+    view.rerender(<Discuss ctx={after} remaining={null} />)
+    // Between topics the form is for the same topic, the last one.
+    const field = screen.getByLabelText('New action')
+    expect(field).toHaveValue('Send the checklist to')
+    expect(field).toHaveFocus()
+    await user.keyboard(' Maya')
+    expect(field).toHaveValue('Send the checklist to Maya')
+  })
+
+  it('keeps a draft for the last topic under the next one when it starts at once', async () => {
+    const { ctx, view, user } = setup('u2')
+    await user.type(screen.getByRole('combobox', { name: 'Action owner' }), 'Ma')
+    const after = makeCtx(
+      'u2',
+      [makeTopic('t1', 'On stage', 'discussed', 1), makeTopic('t2', 'Next up', 'discussing', 2)],
+      ctx.act,
+      { phase_ends_at: ends() },
+    )
+    view.rerender(<Discuss ctx={after} remaining={300_000} />)
+    expect(screen.getByRole('heading', { level: 1, name: 'Next up' })).toBeInTheDocument()
+    const owners = screen.getAllByRole('combobox', { name: 'Action owner' })
+    expect(owners.map((o) => (o as HTMLInputElement).value)).toEqual(['', 'Ma'])
+    expect(owners[1]).toHaveFocus()
+    expect(screen.getByText('Actions from the last topic')).toBeInTheDocument()
+  })
+
+  it('closes the stage editor when the facilitator role moves away', async () => {
+    const { ctx, view, user } = setup('u1')
+    await user.click(screen.getByRole('button', { name: 'Edit "On stage"' }))
+    expect(screen.getByRole('textbox', { name: 'Edit topic' })).toBeInTheDocument()
+    view.rerender(<Discuss ctx={{ ...ctx, isFacilitator: false }} remaining={120_000} />)
+    expect(screen.queryByRole('textbox', { name: 'Edit topic' })).toBeNull()
+    expect(screen.getByRole('heading', { level: 1, name: 'On stage' })).not.toHaveClass('sr-only')
   })
 
   it('lets the facilitator fix the topic on stage, keeping it the page heading', async () => {
@@ -342,7 +423,9 @@ describe('Discuss extend vote', () => {
 
   it('says when the group chose to keep going', () => {
     setup('u2', 'discussing', [round(2, 0, 'extend')])
-    expect(screen.getByText('The group chose to keep going: 3:00 added.')).toBeInTheDocument()
+    expect(
+      screen.getByText('The group chose to keep going: the clock restarts at 3:00.'),
+    ).toBeInTheDocument()
   })
 
   it('reads out a second extension too, though its words are the same', () => {
@@ -354,7 +437,7 @@ describe('Discuss extend vote', () => {
       next.board.data.extendRounds = rounds
       view.rerender(<Discuss ctx={next} remaining={120_000} />)
     }
-    const said = 'The group chose to keep going on "On stage": 3:00 added.'
+    const said = 'The group chose to keep going on "On stage": the clock restarts at 3:00.'
     show([kept('r1')])
     const first = screen.getByText(said)
     show([kept('r1'), open('r2')])
@@ -391,7 +474,9 @@ describe('Discuss extend vote', () => {
 
   it('says when the facilitator extended against the vote', () => {
     setup('u2', 'discussing', [round(0, 2, 'extend')])
-    expect(screen.getByText('The facilitator extended it: 3:00 added.')).toBeInTheDocument()
+    expect(
+      screen.getByText('The facilitator extended it: the clock restarts at 3:00.'),
+    ).toBeInTheDocument()
   })
 
   it('clears the stage after Move on and lets the facilitator extend anyway', async () => {
@@ -406,17 +491,108 @@ describe('Discuss extend vote', () => {
   })
 
   it('offers the next topic, a re-vote and wrap-up between topics', async () => {
-    const { act, user } = setup('u1', 'discussed')
+    for (const [name, fn, args] of [
+      ['Start the 5:00 clock', 'start_discussion', {}],
+      ['Re-vote remaining topics', 'revote', {}],
+      ['Start wrap-up', 'start_phase', { p_phase: 'wrapup' }],
+    ] as const) {
+      const { act, user, view } = setup('u1', 'discussed')
+      const stage = screen.getByRole('region', { name: 'Discussing' })
+      expect(within(stage).getByText('UP NEXT')).toBeInTheDocument()
+      await user.click(within(stage).getByRole('button', { name }))
+      expect(act).toHaveBeenLastCalledWith(fn, { p_board: 'b1', ...args })
+      // The last topic's actions are added here and listed under it in Discussed.
+      expect(within(stage).getByText('Actions from the last topic')).toBeInTheDocument()
+      view.unmount()
+    }
+  })
+
+  it('puts the start button beside UP NEXT, above a topic of any length', () => {
+    setup('u1', 'discussed')
+    const start = screen.getByRole('button', { name: 'Start the 5:00 clock' })
+    const h1 = screen.getByRole('heading', { level: 1, name: 'Next up' })
+    expect(start.compareDocumentPosition(h1) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(h1).toHaveAttribute('dir', 'auto')
+  })
+
+  it('keeps focus on the vote button that closed the vote', async () => {
+    const open = { ...round(0, 0, null), closed_at: null, keep_count: null }
+    const { ctx, view, user } = setup('u2', 'discussing', [open])
+    const keep = screen.getByRole('button', { name: /^Keep going/ })
+    await user.click(keep)
+    expect(ctx.act).toHaveBeenCalledWith('cast_extend_vote', { p_round: 'r1', p_choice: 'keep' })
+    const next = makeCtx('u2', board(), ctx.act, { phase_ends_at: ends() })
+    next.board.data.extendRounds = [round(2, 0, 'extend')]
+    view.rerender(<Discuss ctx={next} remaining={180_000} />)
+    const closed = screen.getByRole('button', { name: /^Keep going/ })
+    expect(closed).toHaveFocus()
+    expect(closed).toHaveAttribute('aria-disabled', 'true')
+    // The hidden "?" is gone; the count is read with its word.
+    expect(closed).toHaveAccessibleName(/^Keep going.*2 ?votes$/)
+    await user.click(closed)
+    expect(ctx.act).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not show the vote that extended the topic when the extension reaches zero', () => {
+    // The keep vote closed 4 s ago; the extended clock was cut to zero with Remove 1 minute.
+    const kept = {
+      ...round(2, 0, 'extend'),
+      opened_at: new Date(Date.now() - 20_000).toISOString(),
+      closed_at: new Date(Date.now() - 4000).toISOString(),
+    }
+    const ctx = makeCtx('u2', board(), vi.fn(), { phase_ends_at: new Date().toISOString() })
+    ctx.board.data.extendRounds = [kept]
+    render(<Discuss ctx={ctx} remaining={0} />)
+    expect(screen.queryByRole('region', { name: 'Extend vote' })).toBeNull()
+  })
+
+  it('moves focus to the Move on result, so Extend anyway is the next stop', async () => {
+    const open = { ...round(0, 0, null), closed_at: null, keep_count: null }
+    const { ctx, view, user } = setup('u1', 'discussing', [open])
+    await user.click(screen.getByRole('button', { name: /^Move on/ }))
+    const next = makeCtx('u1', board('discussed'), ctx.act, { phase_ends_at: null })
+    next.board.data.extendRounds = [round(0, 2, 'move_on')]
+    view.rerender(<Discuss ctx={next} remaining={null} />)
+    const result = screen.getByText('The group chose to move on.').closest('p')
+    expect(result).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Extend 3:00 anyway' })).toHaveFocus()
+  })
+
+  it('shows the last board that agreed while the tables catch up', () => {
+    // Between topics, Up next is "Next up". Start the clock: the topics reload first.
+    const { ctx, view } = setup('u1', 'discussed')
+    const mixed = makeCtx(
+      'u1',
+      [
+        makeTopic('t1', 'On stage', 'discussed', 1),
+        makeTopic('t2', 'Next up', 'discussing', 2),
+        makeTopic('t3', 'Skipped topic', 'skipped', 3),
+      ],
+      ctx.act,
+      { phase_ends_at: null, current_topic_id: null },
+    )
+    view.rerender(<Discuss ctx={mixed} remaining={null} />)
+    // Not "UP NEXT Skipped topic" or an empty queue: still the board from before.
     const stage = screen.getByRole('region', { name: 'Discussing' })
     expect(within(stage).getByText('UP NEXT')).toBeInTheDocument()
-    await user.click(within(stage).getByRole('button', { name: 'Start the 5:00 clock' }))
-    expect(act).toHaveBeenLastCalledWith('start_discussion', { p_board: 'b1' })
-    await user.click(within(stage).getByRole('button', { name: 'Re-vote remaining topics' }))
-    expect(act).toHaveBeenLastCalledWith('revote', { p_board: 'b1' })
-    await user.click(within(stage).getByRole('button', { name: 'Start wrap-up' }))
-    expect(act).toHaveBeenLastCalledWith('start_phase', { p_board: 'b1', p_phase: 'wrapup' })
-    // The last topic's actions are added here and listed under it in Discussed.
-    expect(within(stage).getByText('Actions from the last topic')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Next up' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'To discuss' })).toHaveTextContent('Next up')
+    // The board state arrives: the topic is on stage.
+    const settled = makeCtx('u1', mixed.board.data.topics, ctx.act, {
+      phase_ends_at: ends(),
+      current_topic_id: 't2',
+    })
+    view.rerender(<Discuss ctx={settled} remaining={300_000} />)
+    expect(within(stage).getByText('DISCUSSING NOW')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'To discuss' })).not.toHaveTextContent('Next up')
+  })
+
+  it('puts the stage editor in place of the 44 px heading', async () => {
+    const { user } = setup('u1')
+    await user.click(screen.getByRole('button', { name: 'Edit "On stage"' }))
+    expect(screen.getByRole('heading', { level: 1, name: 'On stage' })).toHaveClass('sr-only')
+    expect(screen.getByRole('textbox', { name: 'Edit topic' })).toHaveClass('text-[20px]')
   })
 
   it('tells participants who starts the next topic', () => {
@@ -430,7 +606,18 @@ describe('Discuss extend vote', () => {
     expect(
       screen.getByRole('heading', { level: 1, name: 'Every topic has been discussed' }),
     ).toBeInTheDocument()
+    expect(
+      screen.getByText('Start wrap-up to collect take-aways and download the results.'),
+    ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Start wrap-up' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'To discuss' })).toHaveTextContent(
+      'No topics waiting.',
+    )
+  })
+
+  it('tells participants what happens once the queue is empty', () => {
+    setup('u2', 'discussed', [], {}, [makeTopic('t1', 'Only one', 'discussed', 1)])
+    expect(screen.getByText('Waiting for the facilitator to start wrap-up.')).toBeInTheDocument()
   })
 
   it('says the queue is empty when only skipped topics are left', () => {
@@ -442,6 +629,16 @@ describe('Discuss extend vote', () => {
       screen.getByRole('heading', { level: 1, name: 'No topics left in the queue' }),
     ).toBeInTheDocument()
   })
+
+  it('points the facilitator to Bring back when only skipped topics are left', () => {
+    setup('u1', 'discussed', [], {}, [
+      makeTopic('t1', 'Only one', 'discussed', 1),
+      makeTopic('t2', 'Put aside', 'skipped', 2),
+    ])
+    expect(
+      screen.getByText('Bring back a skipped topic from To discuss, or start wrap-up.'),
+    ).toBeInTheDocument()
+  })
 })
 
 describe('WrapUp', () => {
@@ -449,7 +646,8 @@ describe('WrapUp', () => {
     const act = vi.fn(async () => true)
     const ctx = makeCtx('u1', [], act, { phase: 'wrapup', paused_remaining_ms: 90_000 })
     render(<WrapUp ctx={ctx} remaining={90_000} />)
-    expect(screen.getByText('PAUSED')).toBeInTheDocument()
+    // In words, whichever clock Wrap-up uses.
+    expect(screen.getByRole('timer')).toHaveTextContent(/paused/i)
     expect(screen.getByRole('button', { name: 'Resume' })).toBeInTheDocument()
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('New action'), 'Book the next session')

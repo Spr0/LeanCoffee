@@ -7,15 +7,20 @@ import type { PhaseProps } from './common'
 
 export const TOPIC_MAX = 160
 
-/** Facilitator's inline topic edit: Enter or Save saves; Cancel or Escape cancels. */
+/**
+ * Facilitator's inline topic edit: Enter or Save saves; Cancel or Escape cancels. `large` is the
+ * stage's editor, which takes the place of the 44 px heading.
+ */
 export function TopicEditor({
   ctx,
   topic,
   onDone,
+  large = false,
 }: {
   ctx: PhaseProps['ctx']
   topic: Topic
   onDone: () => void
+  large?: boolean
 }) {
   const [text, setText] = useState(topic.text)
   const input = useRef<HTMLTextAreaElement>(null)
@@ -43,6 +48,7 @@ export function TopicEditor({
         aria-label="Edit topic"
         aria-describedby={countId}
         value={text}
+        dir="auto"
         rows={3}
         maxLength={TOPIC_MAX}
         onChange={(e) => setText(e.target.value.replace(/\n/g, ' '))}
@@ -56,7 +62,7 @@ export function TopicEditor({
             onDone()
           }
         }}
-        className="w-full min-w-0 resize-none rounded-lg border-2 border-teal bg-panel p-2.5 text-[15px]"
+        className={`w-full min-w-0 resize-none rounded-lg border-2 border-teal bg-panel p-2.5 ${large ? 'text-[20px] leading-snug' : 'text-[15px]'}`}
       />
       <p id={countId} className="text-[13px] text-muted">
         {text.length} of {TOPIC_MAX} characters
@@ -145,7 +151,9 @@ export function DeleteTopicDialog({
 
   return (
     <Dialog open={topic !== null && usable} onClose={onClose} title="Delete this topic?">
-      <p className="mt-3 text-[17px] font-bold break-words">{live?.text}</p>
+      <p dir="auto" className="mt-3 text-[17px] font-bold break-words [overflow-wrap:anywhere]">
+        {live?.text}
+      </p>
       <p className="mt-2 text-[15px] text-muted">
         It is removed for everyone, along with its votes. Actions from it stay.
         {merged.length > 0 &&

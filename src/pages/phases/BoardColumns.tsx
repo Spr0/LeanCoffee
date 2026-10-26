@@ -7,17 +7,22 @@ import { BringBack, DeleteTopicDialog, TOPIC_MAX, TopicEditor } from './TopicToo
 
 // The side columns of the board. Each takes `className` to fill its grid cell and scroll on its
 // own beside the stage, so reaching the parking lot or an old topic leaves the stage on the share.
+// Scroll padding keeps a focused control's ring clear of the column's edge when it scrolls there.
+const SCROLL_ROOM = 'scroll-py-3'
+// Topic and action text: a long link or word breaks rather than widening every card.
+const WRAP = '[overflow-wrap:anywhere]'
 
 /**
  * The open editor and the delete dialog for a column's cards. An editor left open on a card that
- * leaves the column closes, so it cannot reopen later and take focus. After a delete the card's
+ * leaves the column closes, so it cannot reopen later and take focus; so does one left open when
+ * the facilitator role moves away (the delete dialog closes itself). After a delete the card's
  * button is gone, so focus moves to the column heading; this runs after the dialog has closed
  * (child effects first), which would otherwise hand focus back to that button.
  */
-function useCardTools(here: Topic[]) {
+function useCardTools(here: Topic[], isFacilitator: boolean) {
   const [editing, setEditing] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<Topic | null>(null)
-  if (editing !== null && !here.some((t) => t.id === editing)) setEditing(null)
+  if (editing !== null && (!isFacilitator || !here.some((t) => t.id === editing))) setEditing(null)
   const heading = useRef<HTMLHeadingElement>(null)
   const focusHeading = useRef(false)
   useEffect(() => {
@@ -68,10 +73,10 @@ export function QueueColumn({
   const all = cards(board.data.topics)
   const queue = all.filter((t) => t.status === 'open')
   const skipped = all.filter((t) => t.status === 'skipped')
-  const { editing, setEditing, deleting, setDeleting, heading, afterDelete } = useCardTools([
-    ...queue,
-    ...skipped,
-  ])
+  const { editing, setEditing, deleting, setDeleting, heading, afterDelete } = useCardTools(
+    [...queue, ...skipped],
+    ctx.isFacilitator,
+  )
   const list = useRef<HTMLOListElement>(null)
   const headingId = useId()
   const skippedId = useId()
@@ -91,7 +96,7 @@ export function QueueColumn({
   const own = (t: Topic) => board.data.actions.filter((a) => a.topic_id === t.id)
 
   return (
-    <SideColumn label="To discuss" className={className}>
+    <SideColumn label="To discuss" className={`${SCROLL_ROOM} ${className}`}>
       <h2
         ref={heading}
         id={headingId}
@@ -100,7 +105,17 @@ export function QueueColumn({
       >
         To discuss <span className="text-muted">{queue.length}</span>
       </h2>
-      <ol ref={list} tabIndex={-1} aria-labelledby={headingId} className="mt-2 flex flex-col gap-2">
+      {queue.length === 0 && (
+        <p className="mt-2 rounded-xl border-2 border-dashed border-line p-4 text-[15px] text-muted">
+          No topics waiting.
+        </p>
+      )}
+      <ol
+        ref={list}
+        tabIndex={-1}
+        aria-labelledby={headingId}
+        className={`flex flex-col gap-2 ${queue.length > 0 ? 'mt-2' : ''}`}
+      >
         {queue.map((t, i) => (
           <TopicCard
             key={t.id}
@@ -114,7 +129,7 @@ export function QueueColumn({
           />
         ))}
       </ol>
-      {!state.topics_locked && <ParkingLot ctx={ctx} />}
+      {!state.topics_locked && <ParkingLot ctx={ctx} count={queue.length} />}
       {skipped.length > 0 && (
         <>
           <h3
@@ -223,11 +238,14 @@ function TopicCard({
       ) : (
         <>
           {first && <p className={CARD_TAG}>UP NEXT</p>}
-          <p className={`text-[15px] leading-snug break-words ${skipped ? '' : 'font-bold'}`}>
+          <p
+            dir="auto"
+            className={`text-[15px] leading-snug ${WRAP} ${skipped ? '' : 'font-bold'}`}
+          >
             {t.text}
           </p>
           <p className="mt-1 text-[13px] text-muted">
-            {t.author_name} · {plural(votes, 'vote')}
+            <bdi>{t.author_name}</bdi> · {plural(votes, 'vote')}
           </p>
           {ctx.isFacilitator &&
             (skipped ? (
@@ -257,11 +275,19 @@ function TopicCard({
   )
 }
 
-/** Parking lot: anyone adds a topic to the end of the queue, until the facilitator closes it. */
-function ParkingLot({ ctx }: { ctx: PhaseProps['ctx'] }) {
+/**
+ * Parking lot: anyone adds a topic to the end of the queue, until the facilitator closes it. A new
+ * card lands above the field, so the column scrolls to keep the focused field in sight.
+ */
+function ParkingLot({ ctx, count }: { ctx: PhaseProps['ctx']; count: number }) {
   const { state, act } = ctx
   const [text, setText] = useState('')
   const countId = useId()
+  const input = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    const el = input.current
+    if (el && document.activeElement === el) el.scrollIntoView({ block: 'nearest' })
+  }, [count])
   return (
     <form
       className="mt-2"
@@ -273,19 +299,22 @@ function ParkingLot({ ctx }: { ctx: PhaseProps['ctx'] }) {
     >
       <div className="flex gap-2">
         <input
+          ref={input}
           aria-label="Add a topic to the end of the queue"
           aria-describedby={countId}
           value={text}
+          dir="auto"
           maxLength={TOPIC_MAX}
           onChange={(e) => setText(e.target.value)}
           placeholder="Add a topic"
-          className="h-11 min-w-0 flex-1 rounded-lg border-2 border-line bg-panel px-3 text-[15px]"
+          className="h-11 min-w-0 flex-1 rounded-lg border-2 border-line-strong bg-panel px-3 text-[15px]"
         />
         <Button type="submit" variant="secondary" className="px-4">
           Add
         </Button>
       </div>
-      <p id={countId} className="mt-1 px-1 text-[13px] text-muted">
+      {/* Shown once something is typed; screen readers always have the limit. */}
+      <p id={countId} className={text ? 'mt-1 px-1 text-[13px] text-muted' : 'sr-only'}>
         {text.length} of {TOPIC_MAX} characters
       </p>
     </form>
@@ -315,17 +344,25 @@ export function DiscussedColumn({
   const discussed = topics
     .filter((t) => t.status === 'discussed')
     .sort((a, b) => (a.discussed_seq ?? 0) - (b.discussed_seq ?? 0))
-  const { editing, setEditing, deleting, setDeleting, heading, afterDelete } =
-    useCardTools(discussed)
+  const { editing, setEditing, deleting, setDeleting, heading, afterDelete } = useCardTools(
+    discussed,
+    ctx.isFacilitator,
+  )
   const onBoard = new Set(cards(topics).map((t) => t.id))
   const others = actions.filter((a) => a.topic_id === null || !onBoard.has(a.topic_id))
+  const headingId = useId()
   const othersId = useId()
   const spent = discussed.reduce((ms, t) => ms + t.time_spent_ms, 0)
   // From Wrap-up on no more topics will be discussed.
   const over = ctx.state.phase === 'wrapup' || ctx.state.phase === 'ended'
   return (
-    <SideColumn label="Discussed" className={className}>
-      <h2 ref={heading} tabIndex={-1} className="flex justify-between px-1 text-[17px] font-bold">
+    <SideColumn label="Discussed" className={`${SCROLL_ROOM} ${className}`}>
+      <h2
+        ref={heading}
+        id={headingId}
+        tabIndex={-1}
+        className="flex justify-between px-1 text-[17px] font-bold"
+      >
         Discussed <span className="text-muted">{discussed.length}</span>
       </h2>
       {discussed.length === 0 ? (
@@ -335,8 +372,12 @@ export function DiscussedColumn({
             : 'Topics move here once discussed, with their time and the actions that came out of them.'}
         </p>
       ) : (
-        // Two across when the column runs under the stage, between 1024 and 1280 px.
-        <ol className="mt-2 grid gap-2 lg:max-xl:grid-cols-2">
+        // Two across when the column runs under the stage, between 1024 and 1280 px. The tracks are
+        // minmax(0, 1fr), so one long link or name cannot widen every card past the column.
+        <ol
+          aria-labelledby={headingId}
+          className="mt-2 grid grid-cols-1 gap-2 lg:max-xl:grid-cols-2"
+        >
           {discussed.map((t) => (
             <DiscussedCard
               key={t.id}
@@ -406,7 +447,7 @@ function DiscussedCard({
 }: CardProps & { readOnly: boolean }) {
   const { editId, closing } = useEditFocus(editing)
   return (
-    <li className="rounded-xl border-2 border-line-soft bg-panel p-3">
+    <li className="min-w-0 rounded-xl border-2 border-line-soft bg-panel p-3">
       {editing ? (
         <TopicEditor
           ctx={ctx}
@@ -422,7 +463,7 @@ function DiscussedCard({
             <span className="mt-0.5 shrink-0">
               <Check />
             </span>
-            <p className="min-w-0 flex-1 text-[15px] leading-snug font-bold break-words">
+            <p dir="auto" className={`min-w-0 flex-1 text-[15px] leading-snug font-bold ${WRAP}`}>
               {t.text}
             </p>
           </div>
@@ -470,8 +511,8 @@ export function ActionList({
 }
 
 /**
- * An action and its done box, for everyone. The whole row is the 44 px target. Read-only, on the
- * ended board, the box is disabled (D61).
+ * An action and its done box, for everyone. The whole row is the 44 px target. The box ticks at
+ * once and goes back if the server refuses. Read-only, on the ended board, it is disabled (D61).
  */
 export function ActionItem({
   ctx,
@@ -484,23 +525,47 @@ export function ActionItem({
   compact?: boolean
   readOnly?: boolean
 }) {
+  const [done, setDone] = useState(a.done)
+  const [saved, setSaved] = useState(a.done)
+  if (saved !== a.done) {
+    setSaved(a.done)
+    setDone(a.done)
+  }
   return (
     <label
-      className={`flex min-h-11 items-center gap-3 ${readOnly ? '' : 'cursor-pointer'} ${compact ? 'text-[14px]' : 'rounded-xl bg-surface p-3 text-[16px] dark:bg-ground'}`}
+      className={`flex min-h-11 items-center ${readOnly ? '' : 'cursor-pointer'} ${compact ? 'gap-2 text-[14px]' : 'gap-3 rounded-xl bg-surface p-3 text-[16px] dark:bg-ground'}`}
     >
       <input
         type="checkbox"
         className="size-5 shrink-0 accent-[var(--teal)]"
-        checked={a.done}
+        checked={done}
         disabled={readOnly}
         aria-label={`Done: ${a.text}`}
-        onChange={(e) => ctx.act('toggle_action', { p_action: a.id, p_done: e.target.checked })}
+        onChange={async (e) => {
+          const next = e.target.checked
+          setDone(next)
+          if (!(await ctx.act('toggle_action', { p_action: a.id, p_done: next }))) setDone(a.done)
+        }}
       />
-      <span className="min-w-0 flex-1 break-words">
-        <span className={a.done ? 'line-through' : ''}>{a.text}</span>
-        {compact && a.owner_name && <b className="whitespace-nowrap"> · {a.owner_name}</b>}
+      <span className={`min-w-0 flex-1 ${WRAP}`}>
+        <span dir="auto" className={done ? 'line-through' : ''}>
+          {a.text}
+        </span>
+        {/* The space before the dot does not wrap, so a line never starts with it. */}
+        {compact && a.owner_name && (
+          <>
+            <span className="whitespace-nowrap"> ·</span>{' '}
+            <b>
+              <bdi>{a.owner_name}</bdi>
+            </b>
+          </>
+        )}
       </span>
-      {!compact && a.owner_name && <b className="text-[14px]">{a.owner_name}</b>}
+      {!compact && a.owner_name && (
+        <b className={`max-w-[40%] text-right text-[14px] ${WRAP}`}>
+          <bdi>{a.owner_name}</bdi>
+        </b>
+      )}
     </label>
   )
 }

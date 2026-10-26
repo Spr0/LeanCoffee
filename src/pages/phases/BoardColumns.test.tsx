@@ -34,9 +34,10 @@ const action = (
 function queue(userId = 'u1', over = {}, topics: Topic[] = TOPICS, actions: Action[] = []) {
   const act = vi.fn(async () => true)
   const onNote = vi.fn()
-  const column = (list: Topic[]) => {
+  const column = (list: Topic[], facilitator?: boolean) => {
     const ctx = makeCtx(userId, list, act, over)
     ctx.board.data.actions = actions
+    if (facilitator !== undefined) ctx.isFacilitator = facilitator
     return <QueueColumn ctx={ctx} totals={new Map()} onNote={onNote} />
   }
   const view = render(column(topics))
@@ -44,7 +45,7 @@ function queue(userId = 'u1', over = {}, topics: Topic[] = TOPICS, actions: Acti
     act,
     onNote,
     user: userEvent.setup(),
-    rerender: (t: Topic[]) => view.rerender(column(t)),
+    rerender: (t: Topic[], facilitator?: boolean) => view.rerender(column(t, facilitator)),
   }
 }
 
@@ -107,6 +108,45 @@ describe('QueueColumn', () => {
     expect(screen.getByRole('button', { name: 'Edit "Open topic"' })).not.toHaveFocus()
   })
 
+  it('closes an open editor when the facilitator role moves away', async () => {
+    const { user, rerender } = queue()
+    await user.click(screen.getByRole('button', { name: 'Edit "Open topic"' }))
+    expect(screen.getByRole('textbox', { name: 'Edit topic' })).toBeInTheDocument()
+    rerender(TOPICS, false)
+    expect(screen.queryByRole('textbox', { name: 'Edit topic' })).toBeNull()
+    // Given back, the editor does not reopen by itself.
+    rerender(TOPICS, true)
+    expect(screen.queryByRole('textbox', { name: 'Edit topic' })).toBeNull()
+  })
+
+  it('says so when no topic is waiting', () => {
+    queue('u2', {}, [makeTopic('t3', 'Done topic', 'discussed', 3)])
+    expect(screen.getByRole('region', { name: 'To discuss' })).toHaveTextContent(
+      'No topics waiting.',
+    )
+  })
+
+  it('keeps the parking lot field in sight as the queue grows above it', async () => {
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    const { rerender } = queue('u2')
+    screen.getByLabelText('Add a topic to the end of the queue').focus()
+    rerender([...TOPICS, makeTopic('t6', 'Parked', 'open', 6)])
+    expect(scroll).toHaveBeenCalledWith({ block: 'nearest' })
+    // Not when the field does not have focus.
+    scroll.mockClear()
+    screen.getByLabelText('Add a topic to the end of the queue').blur()
+    rerender([...TOPICS, makeTopic('t6', 'Parked', 'open', 6), makeTopic('t7', 'More', 'open', 7)])
+    expect(scroll).not.toHaveBeenCalled()
+  })
+
+  it('lays right-to-left topics and names out in their own direction', () => {
+    queue('u2', {}, [{ ...makeTopic('t1', 'كيف نقرر API v2', 'open', 1), author_name: 'عبد' }])
+    const card = screen.getByText('كيف نقرر API v2')
+    expect(card).toHaveAttribute('dir', 'auto')
+    expect(screen.getByText('عبد').tagName).toBe('BDI')
+  })
+
   it('keeps actions from a deferred or skipped topic under its card', () => {
     queue('u2', {}, TOPICS, [
       action('a1', 't4', 'From the skipped topic', 'Maya'),
@@ -166,12 +206,14 @@ describe('QueueColumn', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'To discuss 2' })).toHaveFocus()
   })
 
-  it('counts characters in the parking lot, and hides it when topics are closed', async () => {
+  it('counts characters in the parking lot, shown once something is typed', async () => {
     const { user } = queue('u2')
     const input = screen.getByLabelText('Add a topic to the end of the queue')
     expect(input).toHaveAccessibleDescription('0 of 160 characters')
+    expect(screen.getByText('0 of 160 characters')).toHaveClass('sr-only')
     await user.type(input, 'Budget')
     expect(input).toHaveAccessibleDescription('6 of 160 characters')
+    expect(screen.getByText('6 of 160 characters')).not.toHaveClass('sr-only')
   })
 
   it('has no parking lot once topic submissions are closed', () => {
@@ -225,6 +267,34 @@ describe('DiscussedColumn', () => {
     expect(screen.getByRole('checkbox', { name: 'Done: Trial a format' })).toBeChecked()
     await user.click(screen.getByText('Draft a checklist'))
     expect(act).toHaveBeenCalledWith('toggle_action', { p_action: 'a1', p_done: true })
+  })
+
+  it('ticks at once, and unticks if the server refuses', async () => {
+    let answer: (ok: boolean) => void = () => {}
+    const { act, user } = discussed()
+    act.mockImplementation(() => new Promise<boolean>((done) => (answer = done)))
+    const box = screen.getByRole('checkbox', { name: 'Done: Draft a checklist' })
+    await user.click(box)
+    expect(box).toBeChecked()
+    answer(false)
+    await vi.waitFor(() => expect(box).not.toBeChecked())
+  })
+
+  it('keeps every card inside the column, whatever the link or owner', () => {
+    discussed('u2', [
+      action(
+        'a5',
+        't1',
+        'Read https://confluence.example.com/display/ENG/Intake-2026',
+        'Maximiliana Featherstone',
+      ),
+    ])
+    const list = screen.getByRole('list', { name: 'Discussed 2' })
+    // grid-cols-1 is minmax(0, 1fr): one long word cannot widen the track.
+    expect(list).toHaveClass('grid-cols-1')
+    const owner = screen.getByText('Maximiliana Featherstone')
+    expect(owner.tagName).toBe('BDI')
+    expect(owner.closest('b')).not.toHaveClass('whitespace-nowrap')
   })
 
   it('lists actions left without a topic by a delete, and counts them in the total', () => {
