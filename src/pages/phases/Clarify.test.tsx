@@ -161,6 +161,19 @@ describe('Clarify as the board', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Retro cadence/ }))
     expect(stage()).toHaveTextContent('JOINS ITRetro cadenceFran · 1 card merged in')
     expect(stage()).toHaveTextContent('KEEPS ITS PLACECode review turnaroundPatJOINS IT')
+    // The server flattens the stack, so Undo merge later brings each card back on its own.
+    expect(stage()).toHaveTextContent(
+      'The card merged into the one that joins comes along, with its own Undo merge.',
+    )
+  })
+
+  it('puts Merge and Keep separate before the two cards, so long cards leave them on the share', () => {
+    render(<Clarify ctx={makeCtx({ state: clarify, topics })} remaining={null} />)
+    fireEvent.click(screen.getByRole('button', { name: /^Code review turnaround/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Retro cadence/ }))
+    const merge = screen.getByRole('button', { name: 'Merge 2 selected' })
+    const card = within(stage()).getByText('KEEPS ITS PLACE')
+    expect(merge.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('stacks merged cards under the card they joined, with Undo merge for the facilitator', () => {
@@ -320,14 +333,22 @@ describe('Clarify pitches', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveAttribute('dir', 'auto')
   })
 
-  it('puts the pitch buttons with the ring, and Continue to voting in the toolbar', () => {
+  it('puts the pitch buttons with the ring, the clock buttons and Continue to voting in the toolbar', () => {
     const ctx = makeCtx({ state: pitching('t1'), topics })
     render(<Clarify ctx={ctx} remaining={20_000} />)
     // The ring and its buttons float beside the topic, so the buttons come before it.
     const h1 = screen.getByRole('heading', { level: 1 })
-    for (const name of ['Pause', 'Next pitch', 'Stop pitching']) {
+    for (const name of ['Next pitch', 'Stop pitching']) {
       const button = within(stage()).getByRole('button', { name })
       expect(button.compareDocumentPosition(h1) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
+    // The clock's buttons sit in the toolbar, so the float is no taller than the ring and its row.
+    for (const name of ['Pause', 'Remove 15 seconds', 'Add 15 seconds']) {
+      expect(within(stage()).queryByRole('button', { name })).toBeNull()
+      const button = screen.getByRole('button', { name })
+      expect(
+        button.compareDocumentPosition(stage()) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
     }
     expect(within(stage()).queryByRole('button', { name: 'Continue to voting' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Continue to voting' }))
@@ -341,6 +362,53 @@ describe('Clarify pitches', () => {
     expect(ctx.act).toHaveBeenCalledWith('set_pitch', { p_board: 'b1', p_topic: 't2' })
     rerender(<Clarify ctx={makeCtx({ state: pitching('t2'), topics })} remaining={20_000} />)
     expect(screen.getByRole('button', { name: 'Last pitch done' })).toBeDisabled()
+  })
+
+  it('resumes after the last card pitched once pitches stop', () => {
+    const three = [...topics, topic('t3', 'Three')]
+    const { rerender } = render(
+      <Clarify ctx={makeCtx({ state: pitching('t1'), topics: three })} remaining={20_000} />,
+    )
+    rerender(<Clarify ctx={makeCtx({ state: pitching('t2'), topics: three })} remaining={20_000} />)
+    const stopped = makeCtx({ state: clarify, topics: three })
+    rerender(<Clarify ctx={stopped} remaining={null} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Resume pitches (3 of 3)' }))
+    expect(stopped.act).toHaveBeenCalledWith('set_pitch', { p_board: 'b1', p_topic: 't3' })
+  })
+
+  it('ends the pitch of a card merged away, and resumes with the next one', async () => {
+    const three = [...topics, topic('t3', 'Three')]
+    const { rerender } = render(
+      <Clarify ctx={makeCtx({ state: pitching('t1'), topics: three })} remaining={20_000} />,
+    )
+    const ctx = makeCtx({ state: pitching('t2'), topics: three })
+    rerender(<Clarify ctx={ctx} remaining={20_000} />)
+    fireEvent.click(screen.getByRole('button', { name: /^Three/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^PITCHING NOW/ }))
+    expect(stage()).toHaveTextContent('The card that joins is being pitched.')
+    fireEvent.click(screen.getByRole('button', { name: 'Merge 2 selected' }))
+    expect(ctx.act).toHaveBeenCalledWith('merge_topics', { p_source: 't2', p_target: 't3' })
+    await waitFor(() =>
+      expect(ctx.act).toHaveBeenCalledWith('set_pitch', { p_board: 'b1', p_topic: null }),
+    )
+    const merged = three.map((t) => (t.id === 't2' ? { ...t, merged_into: 't3' } : t))
+    const after = makeCtx({ state: clarify, topics: merged })
+    rerender(<Clarify ctx={after} remaining={null} />)
+    // One was pitched already, so pitches carry on from Three rather than from the top.
+    fireEvent.click(screen.getByRole('button', { name: 'Resume pitches (2 of 2)' }))
+    expect(after.act).toHaveBeenCalledWith('set_pitch', { p_board: 'b1', p_topic: 't3' })
+  })
+
+  it('gives each pitch a fresh ring, so an old "Time\'s up" is not left in its live text', () => {
+    const ctx = makeCtx({ userId: 'u2', state: pitching('t1'), topics })
+    const { rerender } = render(<Clarify ctx={ctx} remaining={1_000} />)
+    rerender(<Clarify ctx={ctx} remaining={0} />)
+    const live = () => screen.getByRole('timer').querySelector('[aria-live]')
+    expect(live()).toHaveTextContent("Time's up")
+    rerender(
+      <Clarify ctx={makeCtx({ userId: 'u2', state: pitching('t2'), topics })} remaining={28_000} />,
+    )
+    expect(live()).toHaveTextContent('')
   })
 
   it('starts with the first card', () => {

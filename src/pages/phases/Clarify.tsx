@@ -57,6 +57,14 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
   const pitching = list.find((t) => t.id === state.pitch_topic_id)
   const pitchIndex = pitching ? list.indexOf(pitching) : -1
   const next = list[pitchIndex + 1]
+  // Cards pitched so far, so Start pitches carries on after Stop pitching or a merge instead of
+  // going back to the first card.
+  const [pitched, setPitched] = useState<string[]>([])
+  if (state.pitch_topic_id && !pitched.includes(state.pitch_topic_id))
+    setPitched([...pitched, state.pitch_topic_id])
+  const resumeAt = list.some((t) => pitched.includes(t.id))
+    ? list.find((t) => !pitched.includes(t.id))
+    : undefined
   // Cards merged or deleted since they were selected drop out of the selection.
   const chosen = selected.filter((id) => list.some((t) => t.id === id))
   const [target, source] = chosen.map((id) => list.find((t) => t.id === id))
@@ -103,12 +111,13 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
       announce('Two cards selected. Merge them or keep them separate on the stage.')
   }
   async function merge() {
-    if (
-      target &&
-      source &&
-      (await act('merge_topics', { p_source: source.id, p_target: target.id }))
-    )
+    if (!target || !source) return
+    const endsPitch = source.id === state.pitch_topic_id
+    if (await act('merge_topics', { p_source: source.id, p_target: target.id })) {
       setSelected([])
+      // The server keeps a merged card on as the pitch, with its clock running; end it.
+      if (endsPitch) void startPitch(null)
+    }
   }
   async function unmerge(id: string) {
     if (await act('unmerge_topic', { p_topic: id })) setRestored(id)
@@ -185,6 +194,10 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
       tools={
         <>
           <PeopleButton ctx={ctx} />
+          {/* The pitch clock's buttons, here so the stage's float stays as short as the ring. */}
+          {isFacilitator && pitching && state.settings.pitch_s > 0 && (
+            <TimerButtons ctx={ctx} addSeconds={15} />
+          )}
           {isFacilitator && <Button onClick={toVote}>Continue to voting</Button>}
         </>
       }
@@ -203,6 +216,7 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
               target={target}
               source={source}
               heading={heading}
+              pitching={source.id === state.pitch_topic_id}
               onMerge={merge}
               onKeep={() => setSelected([])}
             />
@@ -223,7 +237,8 @@ export default function Clarify({ ctx, remaining }: PhaseProps) {
               count={list.length}
               first={target}
               heading={heading}
-              onStart={() => void startPitch(next?.id ?? null)}
+              resume={resumeAt && { number: list.indexOf(resumeAt) + 1, count: list.length }}
+              onStart={() => void startPitch((resumeAt ?? list[0])?.id ?? null)}
               onSkip={toVote}
             />
           )}
@@ -400,8 +415,10 @@ function MergedCard({ topic: c, onUndo }: { topic: Topic; onUndo?: () => void })
 /**
  * The card being pitched, as the page heading at 44 px. The soft clock is a ring as in the other
  * phases; it floats beside the first lines and the topic runs full width under it, and on a
- * narrow stage it goes under the topic. The facilitator's buttons sit under the ring, so a long
- * topic cannot push them off a 720 px share. A pitch is short, so the ring turns urgent at 0:10.
+ * narrow stage it goes under the topic. The facilitator's Next pitch and Stop pitching sit in one
+ * row under the ring and the clock's buttons are in the toolbar, so a 160-character topic and its
+ * buttons stay on a 720 px share. A pitch is short, so the ring turns urgent at 0:10. Each pitch
+ * gets its own ring, so a "Time's up" said for the last one is not left in its live text.
  */
 function PitchStage({
   ctx,
@@ -435,6 +452,7 @@ function PitchStage({
           {timed && (
             <div className="mx-auto mb-2">
               <RingTimer
+                key={topic.id}
                 remaining={remaining}
                 totalMs={totalMs}
                 paused={state.paused_remaining_ms !== null}
@@ -444,20 +462,15 @@ function PitchStage({
             </div>
           )}
           {isFacilitator && (
-            <>
-              {/* Narrower padding, so the three fit under the ring. */}
-              {timed && (
-                <div className="[&_button]:min-w-0 [&_button]:px-2">
-                  <TimerButtons ctx={ctx} addSeconds={15} />
-                </div>
-              )}
+            // One row under the ring keeps the float short, so a long topic stays on the share.
+            <div className="flex gap-2 [&_button]:min-w-0 [&_button]:grow [&_button]:px-3 [&_button]:leading-tight">
               <Button disabled={!next} onClick={() => onPitch(next?.id ?? null)}>
                 {next ? 'Next pitch' : 'Last pitch done'}
               </Button>
               <Button variant="secondary" onClick={() => onPitch(null)}>
                 Stop pitching
               </Button>
-            </>
+            </div>
           )}
         </div>
       )}
@@ -497,12 +510,16 @@ function PitchStage({
   )
 }
 
-/** The facilitator's merge of the two selected cards. Cards already merged into either come too. */
+/**
+ * The facilitator's merge of the two selected cards. Cards already merged into either come too.
+ * The buttons come before the two cards, so two 160-character topics leave them on the share.
+ */
 function MergeStage({
   topics,
   target,
   source,
   heading,
+  pitching,
   onMerge,
   onKeep,
 }: {
@@ -510,9 +527,12 @@ function MergeStage({
   target: Topic
   source: Topic
   heading: RefObject<HTMLHeadingElement | null>
+  /** The card that joins is being pitched: merging ends its pitch. */
+  pitching: boolean
   onMerge: () => void
   onKeep: () => void
 }) {
+  const carriedBySource = mergedInto(topics, source.id).length
   const side = (tag: string, t: Topic) => {
     const carried = mergedInto(topics, t.id).length
     return (
@@ -538,11 +558,18 @@ function MergeStage({
       </h1>
       <p className="mt-2 text-[16px] text-muted">
         Votes are not split between near-duplicates. You can undo until voting starts.
+        {/* The server keeps no record of the earlier stack, so each card comes back on its own. */}
+        {carriedBySource === 1 &&
+          ' The card merged into the one that joins comes along, with its own Undo merge.'}
+        {carriedBySource > 1 &&
+          ` The ${carriedBySource} cards merged into the one that joins come along, each with its own Undo merge.`}
       </p>
-      <div className="mt-4 grid grid-cols-1 gap-3 @lg:grid-cols-2">
-        {side('KEEPS ITS PLACE', target)}
-        {side('JOINS IT', source)}
-      </div>
+      {pitching && (
+        <p className="mt-2 text-[16px] font-bold">
+          The card that joins is being pitched. Merging ends its pitch, and Resume pitches goes on
+          to the next card.
+        </p>
+      )}
       <div className="mt-4 flex flex-wrap gap-2">
         <Button className="h-14 px-8 text-[17px]" onClick={onMerge}>
           Merge 2 selected
@@ -550,6 +577,10 @@ function MergeStage({
         <Button variant="ghost" className="h-14" onClick={onKeep}>
           Keep separate
         </Button>
+      </div>
+      <div className="mt-4 grid grid-cols-1 gap-3 @lg:grid-cols-2">
+        {side('KEEPS ITS PLACE', target)}
+        {side('JOINS IT', source)}
       </div>
     </>
   )
@@ -561,6 +592,7 @@ function TidyStage({
   count,
   first,
   heading,
+  resume,
   onStart,
   onSkip,
 }: {
@@ -568,6 +600,8 @@ function TidyStage({
   count: number
   first: Topic | undefined
   heading: RefObject<HTMLHeadingElement | null>
+  /** Where pitches carry on, once some cards have been pitched. */
+  resume: { number: number; count: number } | undefined
   onStart: () => void
   onSkip: () => void
 }) {
@@ -601,7 +635,7 @@ function TidyStage({
           )}
           <div className="mt-4 flex flex-wrap gap-2">
             <Button className="h-14 px-8 text-[17px]" onClick={onStart}>
-              Start pitches
+              {resume ? `Resume pitches (${resume.number} of ${resume.count})` : 'Start pitches'}
             </Button>
             {/* When the cards already speak for themselves, go straight to voting. */}
             <Button variant="secondary" className="h-14" onClick={onSkip}>

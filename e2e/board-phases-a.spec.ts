@@ -188,6 +188,20 @@ test('Brainstorm and Clarify as the board', async ({ browser }) => {
   await expect(pat.getByText('The clock starts when the facilitator is ready.')).toHaveCount(0)
   await expect(fran.getByLabel('New topic')).toBeInViewport({ ratio: 1 })
 
+  // A clock of 10:00 or more needs the 240 px ring; the form gives up a row, so Add topic stays
+  // on the share (D76). Back under 10:00 the ring is 200 px again.
+  const franTimer = fran.getByRole('timer')
+  for (let i = 0; i < 6; i++) await btn(fran, 'Add 1 minute').click()
+  await expect(franTimer).toContainText(/^1\d:\d\d/)
+  await fran.evaluate(() => window.scrollTo(0, 0))
+  expect((await franTimer.boundingBox())?.width).toBe(240)
+  await expect(btn(fran, 'Add topic')).toBeInViewport({ ratio: 1 })
+  await expect(fran.getByText(/^0 of 160 characters/)).toBeInViewport({ ratio: 1 })
+  await fran.screenshot({ path: `${SHOTS}/brainstorm-over-10-min-facilitator-light-1280x720.png` })
+  for (let i = 0; i < 6; i++) await btn(fran, 'Remove 1 minute').click()
+  await expect(franTimer).toContainText(/^[0-4]:\d\d/)
+  expect((await franTimer.boundingBox())?.width).toBe(200)
+
   // Your cards keep Edit and Delete; Escape returns to Edit, a delete to the column heading.
   const edit = pat.getByRole('textbox', { name: 'Edit topic' })
   await btn(pat, `Edit "${patTopics[2]}"`).click()
@@ -336,8 +350,25 @@ test('Brainstorm and Clarify as the board', async ({ browser }) => {
   for (const page of [fran, pat]) await onTheShare(page, 'Clarify', 44)
   for (const name of ['Pause', 'Next pitch', 'Stop pitching', 'Continue to voting'])
     await expect(btn(fran, name)).toBeInViewport({ ratio: 1 })
+  // The whole topic too: the float beside it is the ring and one row of buttons.
+  for (const page of [fran, pat]) {
+    const h1 = await page.getByRole('heading', { level: 1 }).boundingBox()
+    expect((h1?.y ?? 0) + (h1?.height ?? 720)).toBeLessThanOrEqual(720)
+  }
   await fran.screenshot({ path: `${SHOTS}/clarify-pitching-long-facilitator-light-1280x720.png` })
   await pat.screenshot({ path: `${SHOTS}/clarify-pitching-long-participant-light-1280x720.png` })
+  // Merging a long card: the merge buttons come before the two cards, so they stay on the share.
+  // The card that joins is being pitched, and the stage says merging ends its pitch.
+  await fran.getByRole('button', { name: new RegExp(`^${onboard}`) }).click()
+  await fran.getByRole('button', { name: /^PITCHING NOW/ }).click()
+  await expect(fran.getByRole('heading', { level: 1 })).toHaveText('Merge these two?')
+  await expect(franStage).toContainText('The card that joins is being pitched.')
+  await fran.evaluate(() => window.scrollTo(0, 0))
+  for (const name of ['Merge 2 selected', 'Keep separate'])
+    await expect(btn(fran, name)).toBeInViewport({ ratio: 1 })
+  await fran.screenshot({ path: `${SHOTS}/clarify-merge-long-facilitator-light-1280x720.png` })
+  await btn(fran, 'Keep separate').click()
+  await expect(fran.getByRole('heading', { level: 1, name: LONG })).toBeVisible()
   await btn(fran, `Edit "${LONG}"`).click()
   await fran.getByRole('textbox', { name: 'Edit topic' }).fill(ai)
   await fran.getByRole('textbox', { name: 'Edit topic' }).press('Enter')
@@ -372,10 +403,12 @@ test('Brainstorm and Clarify as the board', async ({ browser }) => {
   await expect(live(pat)).toHaveText('"Saying no without burning trust" was deleted.')
   await expect(patColumn.getByRole('heading', { level: 2 })).toHaveText('To discuss 4')
 
-  // Stop pitching: the stage goes back to the note and focus to its heading.
+  // Stop pitching: the stage goes back to the note and focus to its heading. Pitches resume
+  // after the last card pitched, not from the first.
   await btn(fran, 'Stop pitching').click()
   await expect(fran.getByRole('heading', { level: 1 })).toBeFocused()
   await expect(live(pat)).toHaveText('Pitches stopped.')
+  await expect(btn(fran, 'Resume pitches (3 of 4)')).toBeVisible()
   await btn(fran, 'Use 2 dots').click()
   await expect(btn(fran, 'Using 2 dots')).toBeDisabled()
   // aria-disabled, not disabled: the button keeps keyboard focus once the suggestion applies.
