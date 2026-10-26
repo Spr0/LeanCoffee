@@ -397,9 +397,16 @@ export function EndSession({ ctx, className = '' }: { ctx: BoardContext; classNa
             variant="danger"
             disabled={busy}
             onClick={async () => {
+              if (busy) return
               setBusy(true)
-              if (await ctx.act('end_session', { p_board: ctx.state.board_id })) setOpen(false)
+              // A second press, or another tab that ended it first, is not an error to show.
+              const ok = await ctx.act(
+                'end_session',
+                { p_board: ctx.state.board_id },
+                { quiet: ['invalid_phase_order'] },
+              )
               setBusy(false)
+              if (ok) setOpen(false)
             }}
           >
             End session now

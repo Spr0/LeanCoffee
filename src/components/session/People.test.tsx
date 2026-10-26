@@ -48,7 +48,12 @@ describe('PeoplePanel: end session any time (spec F25)', () => {
     expect(ctx.act).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'End session' }))
     fireEvent.click(screen.getByRole('button', { name: 'End session now' }))
-    expect(ctx.act).toHaveBeenCalledWith('end_session', { p_board: 'b1' })
+    // Another tab, or a second press, that ended it first is not an error to show.
+    expect(ctx.act).toHaveBeenCalledWith(
+      'end_session',
+      { p_board: 'b1' },
+      { quiet: ['invalid_phase_order'] },
+    )
   })
 
   it('leaves Wrap-up to its own End session button', () => {

@@ -192,6 +192,29 @@ describe('useBoard', () => {
     )
   })
 
+  it('does not take a change for a stamp when an older update arrives late', async () => {
+    const { result } = await mount()
+    const at = (s: number) => `2026-10-26T10:00:0${s}Z`
+    const withPitch = (pitch_s: number, s: number) => ({
+      ...STATE,
+      settings: { pitch_s },
+      last_activity_at: at(s),
+    })
+    stateEvent(withPitch(30, 1))
+    await settle()
+    // Pitch 15 then Off, sent quickly; Realtime delivers Off first.
+    db.rows.board_state = withPitch(0, 3)
+    stateEvent(withPitch(0, 3))
+    stateEvent(withPitch(15, 2))
+    await waitFor(() => expect(result.current.data.state?.settings.pitch_s).toBe(0))
+    // Back to 15: a real change, not a stamp, so the state reloads.
+    db.reads = []
+    db.rows.board_state = withPitch(15, 4)
+    stateEvent(withPitch(15, 4))
+    await waitFor(() => expect(result.current.data.state?.settings.pitch_s).toBe(15))
+    expect(db.reads).toContain('board_state')
+  })
+
   it('reloads one table for a change to it', async () => {
     const { result } = await mount()
     db.rows.actions = [{ id: 'a1', text: 'Write it up' }]

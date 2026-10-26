@@ -289,11 +289,14 @@ describe('Vote board after the reveal', () => {
       p_board: 'b1',
       p_ids: ['t1', 't3', 't2', 't4'],
     })
+    // The arrow keeps focus and its name, so the live line says the new place.
+    expect(await screen.findByText('"AI tools" moved up to 2 of 4.')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Move "Onboarding" down' }))
     expect(act).toHaveBeenLastCalledWith('reorder_topics', {
       p_board: 'b1',
       p_ids: ['t2', 't1', 't3', 't4'],
     })
+    expect(await screen.findByText('"Onboarding" moved down to 2 of 4.')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Start discussing' }))
     expect(act).toHaveBeenLastCalledWith('start_phase', { p_board: 'b1', p_phase: 'discuss' })
   })

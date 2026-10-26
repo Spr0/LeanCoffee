@@ -1,6 +1,6 @@
 # Handoff report: Lean Coffee
 
-Date: 2026-10-25, updated 2026-10-26 for the board on every phase and the wave 1 fixes. Live at https://leancoffee-app.netlify.app (Netlify, deployed from `main` of `Spr0/LeanCoffee`). Database: Supabase project `dzvfedktsxomnzokeqap` (free tier).
+Date: 2026-10-25, updated 2026-10-26 for the board on every phase and the wave 1 and wave 2 fixes. Live at https://leancoffee-app.netlify.app (Netlify, deployed from `main` of `Spr0/LeanCoffee`). Database: Supabase project `dzvfedktsxomnzokeqap` (free tier).
 
 ## What was built
 
@@ -51,6 +51,19 @@ Every phase after the Lobby is now the board you chose (option 3): To discuss on
 **Before deploying,** apply the three new migrations in the order the README lists (`20261026100000`, `20261026110000`, `20261026120000`). The client does not depend on them, but dot stacking stays broken until the first is applied.
 
 **Not covered by this round:** the two-tab double press (above); a removed person who does nothing still waits up to 20 s for the removal screen; the Realtime reconnect after a real 30 s network drop was unit-tested, not repeated in a browser; the request savings per change were counted from the code, not measured; Word's right-to-left layout and High Contrast were checked in generated XML and Chromium's emulation, not in Word or Windows. Five smaller items are in [`docs/backlog.md`](backlog.md).
+
+## Wave 2 fixes (2026-10-26)
+
+A second test wave reported 43 findings, each reproduced and checked by a skeptic. The fixes are client-only (no new migration) and recorded as D103 to D107. The ones you would notice:
+
+- **Move on stays with its topic.** After a Move on, skipping or deferring the next topic used to leave the old result and "Extend 3:00 anyway" on stage, and pressing it reopened a topic from two topics back. The result now goes once another topic leaves the stage (D103).
+- **Wrap-up asks before ending.** End session in Wrap-up now confirms and says how many have not shared a take-away and whether your own is unsent (D106).
+- **More of the share is used.** Clarify's pitch clock buttons and Wrap-up's clock buttons moved to the toolbar, the merge buttons come before the two cards, and during the extend vote only the timer buttons and Next topic show, so long topics keep their controls on a 1280 x 720 share (D103, D104, D106).
+- **Clocks read right.** Digits fit inside every ring, "of" no longer counts down after time is added, the stepper says "paused", and quick Lobby presses are no longer lost (D107).
+- **Vote and screen readers.** A double press no longer shows a red error, a random tie draw says so and offers Draw again, reordering is announced, role changes are announced, and used dots show in High Contrast (D103, D105, D107).
+- **Files and the board agree.** "Skipped after 0:05" and "partly discussed, 0:07" read the same on the board and in Word, an empty board says "No topics were added.", the People count keeps people removed after taking part, and take-aways keep a stable order (D106).
+
+**Still open, needing the database (backlog):** take-aways in the order they were shared (they follow join order today); hiding who has finished voting from the API (SECURITY.md, Known limits); recording which topic last left the stage, so a browser that loads after a Skip with no vote also drops the old Move on result; clearing a pitch when its card is merged away; a one-step undo for a merge stack; telling every browser that ties were drawn; and the phase a session ended from, for the ended stepper after a reload.
 
 ## Deviations from the mockups
 

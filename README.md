@@ -100,6 +100,8 @@ There is no staging database (Supabase branching is a paid feature). Each migrat
 2. `20261026110000_scale_fixes.sql`: `clean_text` keeps joiners inside emoji and Persian words (D92).
 3. `20261026120000_stage_races.sql`: stage presses that lose a race are refused quietly, and the optional `p_topic` guard (D95). Replacing these functions drops and recreates their grants inside the file.
 
+The wave 2 fixes (D103 to D107) need no migration. Their server follow-ups are in the backlog.
+
 ## Keeping the free database awake
 
 Supabase pauses free projects after 7 days with little activity. Two independent jobs call the `keepalive()` function once a day:

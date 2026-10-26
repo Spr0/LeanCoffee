@@ -243,6 +243,7 @@ export default function Vote({ ctx, remaining }: PhaseProps) {
           dots={{ on: dotsOn, left: budget - usedNow, cast }}
           list={listRef}
           heading={listHeadingRef}
+          onNote={setNote}
         />
       }
       stageLabel={revealed ? 'Results' : 'Voting'}
@@ -577,6 +578,7 @@ function TopicsColumn({
   dots,
   list,
   heading,
+  onNote,
 }: {
   ctx: PhaseProps['ctx']
   counts: VoteCounts | null
@@ -588,6 +590,7 @@ function TopicsColumn({
   dots: Dotting
   list: RefObject<HTMLOListElement | null>
   heading: RefObject<HTMLHeadingElement | null>
+  onNote: (message: string) => void
 }) {
   const { board, state, act } = ctx
   const { topics, votes, actions } = board.data
@@ -605,12 +608,15 @@ function TopicsColumn({
     const column = heading.current?.closest('section')
     if (column) column.scrollTop = 0
   }, [moment, heading])
-  const move = (index: number, delta: number) => {
+  // The arrow keeps focus and its name, so the live line says where the topic went.
+  const move = async (index: number, delta: number) => {
     const ids = open.map((t) => t.id)
     const [id] = ids.splice(index, 1)
     if (!id) return
     ids.splice(index + delta, 0, id)
-    void act('reorder_topics', { p_board: state.board_id, p_ids: ids })
+    if (!(await act('reorder_topics', { p_board: state.board_id, p_ids: ids }))) return
+    const text = `"${open[index]?.text}"`
+    onNote(`${text} moved ${delta < 0 ? 'up' : 'down'} to ${index + delta + 1} of ${ids.length}.`)
   }
   return (
     <SideColumn label="To discuss" className={FILL_LEFT}>
@@ -640,7 +646,7 @@ function TopicsColumn({
             dots={dots}
             actions={own(t)}
             upNext={revealed && i === 0}
-            onMove={revealed ? (delta) => move(i, delta) : undefined}
+            onMove={revealed ? (delta) => void move(i, delta) : undefined}
             last={i === open.length - 1}
           />
         ))}

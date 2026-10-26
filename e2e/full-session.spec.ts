@@ -222,6 +222,10 @@ test('six people run a whole session', async ({ browser }) => {
     expect((await file.path()) ?? '').not.toBe('')
   }
   await fran.getByRole('button', { name: 'End session' }).click()
+  await fran
+    .getByRole('dialog', { name: 'End the session now?' })
+    .getByRole('button', { name: 'End session now' })
+    .click()
   // Downloads stay available after the session ends.
   await expect(pat.getByRole('button', { name: 'Download Word file' })).toBeEnabled()
   await expect(pat.getByRole('heading', { name: 'This session has ended' })).toBeVisible()

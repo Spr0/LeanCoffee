@@ -94,6 +94,7 @@ const GOVERNS: Partial<Record<string, Table[]>> = {
  */
 const STAMP = 'last_activity_at'
 const STAMPED: Table[] = ['participants', 'actions']
+const stampOf = (row: Row) => Date.parse(String(row[STAMP]))
 
 export type Connection = 'connecting' | 'live' | 'reconnecting'
 
@@ -241,6 +242,13 @@ export function useBoard(boardId: string): UseBoard {
       const onStateChange = (payload: RealtimePostgresChangesPayload<Row>) => {
         const prev = lastRow
         const row = payload.eventType === 'DELETE' ? null : payload.new
+        // Two quick writes can arrive out of order. A row stamped before the last one seen is not
+        // the board now: reload the state, and keep comparing with the newer row, or the next
+        // change (back to the older row's value) would look like a stamp alone and be missed.
+        if (prev && row && stampOf(row) < stampOf(prev)) {
+          void refresh(Object.keys(row).flatMap((k) => GOVERNS[k] ?? []))
+          return
+        }
         lastRow = row
         if (!prev || !row || payload.eventType !== 'UPDATE' || payload.errors) {
           void refresh()
@@ -293,10 +301,12 @@ export function useBoard(boardId: string): UseBoard {
       stopRetry()
       if (channel) void supabase.removeChannel(channel)
     }
+    // A removed person's tab drops the board's topics, actions and take-aways from memory too.
     const onGone = () => {
       if (!active) return
       stop()
       setGone(true)
+      setData(EMPTY)
     }
     reloader.current = loadTable
 

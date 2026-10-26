@@ -461,9 +461,12 @@ function Stage({
   const outcome = (p_outcome: 'discussed' | 'deferred' | 'skipped') =>
     press.run('next_topic', { p_board: state.board_id, p_outcome })
   const busy = { className: BUSY, 'aria-disabled': press.busy || undefined }
-  // A long topic or the extend vote shrinks the ring; the type stays at 44 px.
+  // A long topic or the extend vote shrinks the ring; the type stays at 44 px. The ring keeps the
+  // longest length it has seen, so it starts over when the clock restarts or the extension count
+  // arrives (they come separately): an extension's 3:00 must not read "of 5:00".
   const ring = (
     <RingTimer
+      key={`${topic.id}|${topic.extensions}|${state.timer_started_at}`}
       remaining={remaining}
       totalMs={totalMs}
       paused={state.paused_remaining_ms !== null}

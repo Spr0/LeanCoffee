@@ -78,5 +78,7 @@ test('a session can be run from start to end with the keyboard alone', async ({ 
   await typeInto(pat, pat.getByLabel('Your take-away'), 'Keyboards are enough.', true)
   await expect(fran.getByText('Keyboards are enough.')).toBeVisible()
   await tabTo(fran, btn(fran, 'End session'), 'Enter')
+  // Wrap-up asks first too (D69); focus opens on the dialog title.
+  await tabTo(fran, btn(fran, 'End session now'), 'Enter')
   await expect(pat.getByRole('heading', { name: 'This session has ended' })).toBeVisible()
 })

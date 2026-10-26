@@ -4,9 +4,10 @@ import { Dialog } from '../../components/session/Dialog'
 import { PeopleButton } from '../../components/session/People'
 import { Avatar, Button } from '../../components/ui'
 import { download } from '../../lib/export/download'
-import { mss } from '../../lib/export/model'
+import { topicLeftNote } from '../../lib/export/model'
 import { boardTotals, cards, discussProgress, plural } from '../../lib/session'
 import { formatClock } from '../../lib/time'
+import type { Topic } from '../../lib/types'
 import type { BoardData } from '../../state/useBoard'
 import { useNow } from '../../state/useNow'
 import { ActionList, DiscussedColumn } from './BoardColumns'
@@ -481,6 +482,12 @@ function DownloadButtons({ data, onNote }: { data: BoardData; onNote: (message: 
  * Left column, Not discussed: the topics left in the queue and those skipped, with their votes
  * and actions. They stay in the files for next time.
  */
+/** " · skipped after 0:05" and the like, after the vote count on a Not discussed card. */
+function cardNote(t: Topic): string | null {
+  const note = topicLeftNote(t)
+  return note && ` · ${note}`
+}
+
 function NotDiscussedColumn({
   ctx,
   totals,
@@ -520,12 +527,8 @@ function NotDiscussedColumn({
                 </p>
                 <p className="mt-1 text-[13px] wrap-anywhere text-muted">
                   <bdi>{t.author_name}</bdi> · {plural(totals.get(t.id) ?? 0, 'vote')}
-                  {/* As the Word and Excel files say it (D100). */}
-                  {t.status === 'skipped'
-                    ? t.time_spent_ms > 0
-                      ? ` · skipped after ${mss(t.time_spent_ms)}`
-                      : ' · skipped'
-                    : t.time_spent_ms > 0 && ` · partly discussed, ${mss(t.time_spent_ms)}`}
+                  {/* As the Word and Excel files say it (D100), from the same helper. */}
+                  {cardNote(t)}
                 </p>
                 <ActionList
                   ctx={ctx}
