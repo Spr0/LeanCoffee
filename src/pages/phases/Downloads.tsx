@@ -10,18 +10,22 @@ const FILES = [
     title: 'Word summary (.docx)',
     detail: 'Topics discussed with votes, take-aways, and actions with owners',
     label: 'Download Word file',
+    name: 'Word file',
   },
   {
     kind: 'xlsx',
     title: 'Excel workbook (.xlsx)',
     detail: 'Three sheets: Topics and votes, Actions, Take-aways',
     label: 'Download Excel file',
+    name: 'Excel file',
   },
 ] as const
 
 /**
  * Word and Excel downloads for every member, from the Vote reveal onward (spec F24). Inside a
- * dialog the dialog's title names them, so `heading` is off.
+ * dialog the dialog's title names them, so `heading` is off. While a file is built the buttons say
+ * so but stay enabled (aria-disabled), so the pressed one keeps keyboard focus, and a polite line
+ * says when the file is ready.
  */
 export default function Downloads({
   data,
@@ -32,6 +36,7 @@ export default function Downloads({
 }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [said, setSaid] = useState('')
   return (
     <div>
       {heading && <h2 className="text-[20px] font-bold">Download the results</h2>}
@@ -45,14 +50,18 @@ export default function Downloads({
             <p className="text-[14px] text-muted">{f.detail}</p>
             <p className="mt-1 text-[13px] text-muted">{previewName(data, f.kind)}</p>
             <Button
-              className="mt-3 w-full"
-              disabled={busy !== null}
+              className="mt-3 w-full aria-disabled:cursor-progress aria-disabled:opacity-50"
+              aria-disabled={busy !== null || undefined}
               onClick={async () => {
+                if (busy !== null) return
                 setBusy(f.kind)
                 setError(null)
+                setSaid(`Preparing the ${f.name}…`)
                 try {
                   await download(f.kind, data)
+                  setSaid(`${f.name} downloaded.`)
                 } catch {
+                  setSaid('')
                   setError('Could not build the file. Try again.')
                 } finally {
                   setBusy(null)
@@ -64,6 +73,9 @@ export default function Downloads({
           </div>
         ))}
       </div>
+      <p role="status" className="sr-only">
+        {said}
+      </p>
       {error && (
         <p role="alert" className="mt-2 text-[14px] font-bold text-danger">
           {error}
@@ -73,7 +85,7 @@ export default function Downloads({
   )
 }
 
-/** Discuss toolbar: the downloads, one click away in a dialog. */
+/** The toolbar's Downloads, from the Vote reveal on: the files one click away in a dialog. */
 export function DownloadsButton({ data }: { data: BoardData }) {
   const [open, setOpen] = useState(false)
   return (

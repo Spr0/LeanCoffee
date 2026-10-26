@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { echoStatus } from '../../components/session/Dialog'
 import { Button } from '../../components/ui'
 import type { BoardState } from '../../lib/types'
 import { useMediaQuery } from '../../state/useMediaQuery'
@@ -58,6 +59,8 @@ export function BoardFrame({
   note: LiveNote
 }) {
   const wide = useMediaQuery('(min-width: 64rem)')
+  // A toolbar dialog makes the page behind it inert, so it repeats the live line.
+  useEffect(() => echoStatus(note.text), [note])
   const leftCell = (
     <div key="left" className="relative min-w-0">
       {left}
@@ -142,9 +145,12 @@ export function SessionTime({
   const used = Math.max(0, Math.round((nowMs - Date.parse(state.started_at)) / 60_000))
   return (
     <>
-      <div className="h-2.5 w-[180px] overflow-hidden rounded-full bg-line" aria-hidden="true">
+      <div
+        className="h-2.5 w-[180px] overflow-hidden rounded-full bg-line forced-colors:border forced-colors:border-[CanvasText]"
+        aria-hidden="true"
+      >
         <div
-          className="h-full bg-teal"
+          className="h-full bg-teal forced-colors:bg-[CanvasText]"
           style={{ width: `${Math.min(100, (used / state.planned_minutes) * 100)}%` }}
         />
       </div>
@@ -241,9 +247,11 @@ export function Check() {
       height="18"
       viewBox="0 0 24 24"
       fill="none"
-      stroke="var(--teal)"
+      stroke="currentColor"
       strokeWidth="3"
       aria-hidden="true"
+      // currentColor follows forced colors (Windows High Contrast); a set stroke would not.
+      className="text-teal"
     >
       <path d="M5 12l5 5L20 7" />
     </svg>

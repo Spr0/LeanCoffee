@@ -37,7 +37,7 @@ export function InviteButton({ ctx }: { ctx: BoardContext }) {
   const link = inviteLink(code)
   return (
     <>
-      <span className="rounded-md bg-surface px-2 py-1 text-[13px] font-extrabold tracking-[0.08em] text-ink">
+      <span className="shrink-0 rounded-md bg-surface px-2 py-1 text-[13px] font-extrabold tracking-[0.08em] whitespace-nowrap text-ink dark:bg-line">
         <span className="sr-only">Room code: </span>
         {code}
       </span>
@@ -46,7 +46,7 @@ export function InviteButton({ ctx }: { ctx: BoardContext }) {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Invite people"
-        className="min-h-11 rounded-lg border-2 border-line px-3 text-[13px] font-bold text-teal hover:bg-surface"
+        className="min-h-11 shrink-0 rounded-lg border-2 border-line px-3 text-[13px] font-bold whitespace-nowrap text-teal hover:bg-surface dark:hover:bg-line"
       >
         Invite
       </button>

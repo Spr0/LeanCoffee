@@ -52,23 +52,32 @@ export function ThemeToggle() {
 }
 
 /**
- * Common 64 px header for every screen. On a phone a board's header drops the wordmark (the cup
- * still links home), so the room code and Invite fit at 390 px.
+ * Common 64 px header for every screen, on one line at every width: the session name truncates
+ * and nothing wraps. On a phone a board's header drops the wordmark (the cup still links home, as
+ * a 44 px target), so the room code and Invite fit at 320 px.
  */
 export function Header({ context, right }: { context?: ReactNode; right?: ReactNode }) {
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-line-soft bg-ground px-4 sm:px-10">
-      <div className="flex min-w-0 items-center gap-3">
-        <a href="/" className="flex shrink-0 items-center gap-3" aria-label="Lean Coffee home">
+    <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-line-soft bg-ground px-4 sm:gap-3 sm:px-10">
+      <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+        <a
+          href="/"
+          className="flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-3 rounded-lg"
+          aria-label="Lean Coffee home"
+        >
           <span className="flex size-[34px] items-center justify-center rounded-[9px] bg-teal text-on-teal">
             <CupIcon />
           </span>
-          <span className={`text-[19px] font-extrabold ${context ? 'hidden sm:inline' : ''}`}>
+          <span
+            className={`text-[19px] font-extrabold whitespace-nowrap ${context ? 'hidden sm:inline' : ''}`}
+          >
             Lean Coffee
           </span>
         </a>
         {context && (
-          <span className="border-l border-line pl-3 text-[15px] text-muted">{context}</span>
+          <div className="flex min-w-0 items-center gap-2 border-l border-line pl-2 text-[15px] text-muted sm:pl-3">
+            {context}
+          </div>
         )}
       </div>
       <div className="flex shrink-0 items-center gap-3">
