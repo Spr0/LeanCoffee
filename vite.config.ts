@@ -18,6 +18,12 @@ export default defineConfig(({ mode }) => {
       globals: true,
       setupFiles: ['./src/test/setup.ts'],
       include: ['src/**/*.test.{ts,tsx}', 'netlify/**/*.test.ts'],
+      // Unit tests never reach Supabase; placeholders let modules that create the client load
+      // without a local .env.local, as in CI.
+      env: {
+        VITE_SUPABASE_URL: 'http://127.0.0.1:54321',
+        VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_unit_tests_only',
+      },
     },
   }
 })
