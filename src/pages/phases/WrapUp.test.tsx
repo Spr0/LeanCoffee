@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { download } from '../../lib/export/download'
 import type { Action, BoardState, Takeaway, Topic } from '../../lib/types'
@@ -6,7 +6,10 @@ import { makeCtx, makeTopic } from './testBoard'
 import WrapUp from './WrapUp'
 
 // The files are built and saved by the export module; here the call is watched, not run.
-vi.mock('../../lib/export/download', () => ({ download: vi.fn(async () => {}) }))
+vi.mock('../../lib/export/download', () => ({
+  download: vi.fn(async () => {}),
+  previewName: (_data: unknown, kind: string) => `Lean Coffee 2026-10-26.${kind}`,
+}))
 afterEach(() => vi.clearAllMocks())
 
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString()
@@ -84,6 +87,8 @@ describe('Wrap-up board', () => {
       'Not discussed 2',
       'Discussed 2',
     ])
+    // The column's list is named by its heading.
+    expect(screen.getByRole('list', { name: 'Not discussed 2' })).toBeInTheDocument()
     expect(screen.getByText('2 of 4 discussed')).toBeInTheDocument()
     expect(screen.getByText('70 of 75 min').parentElement).toHaveTextContent(
       '70 of 75 min · 3 actions',
@@ -155,8 +160,9 @@ describe('Wrap-up board', () => {
   it('gives the facilitator the clock buttons and End session; everyone the downloads', async () => {
     const { act, user } = setup('u1')
     const stage = screen.getByRole('region', { name: 'Wrap-up' })
-    expect(within(stage).getByRole('timer')).toBeInTheDocument()
-    expect(stage).toHaveTextContent('Wrap-up clock')
+    expect(stage).toHaveTextContent(/^WRAPPING UP/)
+    // The ring every other phase uses, so it turns orange with "1 min left" too.
+    expect(within(stage).getByRole('timer')).toHaveTextContent('4:00of 5:00')
     for (const name of ['Pause', 'Remove 1 minute', 'Add 1 minute'])
       expect(within(stage).getByRole('button', { name })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'End session' }))
@@ -166,6 +172,64 @@ describe('Wrap-up board', () => {
       'docx',
       expect.objectContaining({ topics: expect.any(Array) }),
     )
+  })
+
+  it('puts the downloads and End session before new actions, and Downloads in the toolbar', () => {
+    setup('u1')
+    const before = (a: HTMLElement, b: HTMLElement) =>
+      !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+    const add = screen.getByRole('textbox', { name: 'New action' })
+    expect(before(screen.getByRole('textbox', { name: 'Your take-away' }), add)).toBe(true)
+    expect(before(screen.getByRole('button', { name: 'Download Excel file' }), add)).toBe(true)
+    expect(before(screen.getByRole('button', { name: 'End session' }), add)).toBe(true)
+    expect(screen.getByRole('button', { name: 'Downloads' })).toHaveAttribute(
+      'aria-haspopup',
+      'dialog',
+    )
+    // Before the shared take-aways too, so a long list cannot push them off the share.
+    const shared = screen.getByText('Passed.')
+    expect(before(screen.getByRole('button', { name: 'End session' }), shared)).toBe(true)
+  })
+
+  it('keeps focus on a download button while the file is built, then says it is ready', async () => {
+    let finish = () => {}
+    vi.mocked(download).mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finish = resolve)),
+    )
+    const { user } = setup('u2')
+    const word = screen.getByRole('button', { name: 'Download Word file' })
+    await user.click(word)
+    // Not disabled, so focus stays; a second press does nothing while it is built.
+    expect(word).toHaveTextContent('Preparing…')
+    expect(word).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Download Excel file' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    finish()
+    await waitFor(() => expect(said()).toContain('The Word file is ready.'))
+    expect(word).toHaveTextContent('Download Word file')
+    expect(word).toHaveFocus()
+  })
+
+  it('builds one file at a time', async () => {
+    vi.mocked(download).mockImplementationOnce(() => new Promise<void>(() => {}))
+    const { user } = setup('u2')
+    await user.click(screen.getByRole('button', { name: 'Download Word file' }))
+    await user.click(screen.getByRole('button', { name: 'Download Excel file' }))
+    expect(download).toHaveBeenCalledTimes(1)
+  })
+
+  it('lays out right-to-left topics, names and take-aways in their own direction', () => {
+    setup('u1')
+    const card = within(screen.getByRole('region', { name: 'Not discussed' })).getByText(
+      'Scope creep',
+    )
+    expect(card).toHaveAttribute('dir', 'auto')
+    expect(screen.getByRole('textbox', { name: 'Your take-away' })).toHaveAttribute('dir', 'auto')
+    expect(screen.getByRole('textbox', { name: 'New action' })).toHaveAttribute('dir', 'auto')
+    const stage = screen.getByRole('region', { name: 'Wrap-up' })
+    expect(within(stage).getByText('Fran').closest('bdi')).not.toBeNull()
   })
 
   it('gives participants the downloads but no clock buttons or End session', () => {
@@ -191,6 +255,10 @@ describe('Ended board', () => {
     setup('u1', ENDED)
     expect(regions()).toEqual(['Not discussed', 'Session ended', 'Discussed'])
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('This session has ended')
+    expect(screen.getByRole('region', { name: 'Session ended' })).toHaveTextContent(
+      /^SESSION ENDED/,
+    )
+    expect(screen.getByRole('button', { name: 'Downloads' })).toBeEnabled()
     expect(screen.queryAllByRole('textbox')).toEqual([])
     expect(screen.queryAllByRole('combobox')).toEqual([])
     const boxes = screen.getAllByRole('checkbox')

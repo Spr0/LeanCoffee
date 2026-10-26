@@ -99,6 +99,15 @@ describe('Brainstorm as the board', () => {
     vi.unstubAllGlobals()
   })
 
+  it('writes and shows topics in their own direction', () => {
+    render(
+      <Brainstorm ctx={makeCtx({ userId: 'u2', state: running, topics: mine })} remaining={1} />,
+    )
+    expect(screen.getByLabelText('New topic')).toHaveAttribute('dir', 'auto')
+    for (const li of within(column()).getAllByRole('listitem'))
+      expect(li.querySelector('p[dir="auto"]')).not.toBeNull()
+  })
+
   it('shows hidden cards face down from the count alone, never their words', () => {
     // The database returned only Pat's two cards; three more exist.
     render(

@@ -222,7 +222,9 @@ describe('Vote board after the reveal', () => {
   it('ranks To discuss with totals and ties, and keeps an empty Discussed column', () => {
     setup('u2', REVEALED, RESULTS)
     expect(regions()).toEqual(['To discuss', 'Results', 'Discussed'])
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Here is the agenda')
+    // As in Discuss's Up next, the next topic is the page heading, at 44 px for the share.
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Onboarding')
+    expect(screen.getByRole('heading', { level: 1 })).toHaveClass('text-[44px]')
     expect(cards().map((li) => li.textContent)).toEqual([
       'UP NEXT1OnboardingSam · 3 votes',
       '2Async updatesSam · 2 votesTIED',
@@ -239,7 +241,7 @@ describe('Vote board after the reveal', () => {
   it('shows what is up next on the stage, and participants wait for the facilitator', () => {
     setup('u2', REVEALED, RESULTS)
     const stage = screen.getByRole('region', { name: 'Results' })
-    expect(stage).toHaveTextContent('UP NEXTOnboardingRaised by Sam · 3 votes')
+    expect(stage).toHaveTextContent(/^AGENDAUP NEXTOnboardingRaised by Sam · 3 votes/)
     expect(stage).toHaveTextContent('Waiting for the facilitator to start discussing.')
     expect(stage).toHaveTextContent('Topics marked TIED have the same dots.')
     for (const name of [/^Start discussing$/, /^Move "/, /^Break ties/, /^Quick vote/])
@@ -276,6 +278,24 @@ describe('Vote board after the reveal', () => {
     })
     await user.click(screen.getByRole('button', { name: 'Start discussing' }))
     expect(act).toHaveBeenLastCalledWith('start_phase', { p_board: 'b1', p_phase: 'discuss' })
+  })
+
+  it('lays out a right-to-left topic and name in their own direction', () => {
+    setup('u2', REVEALED, RESULTS)
+    expect(screen.getByRole('heading', { level: 1 })).toHaveAttribute('dir', 'auto')
+    const stage = screen.getByRole('region', { name: 'Results' })
+    // The name is isolated, so a right-to-left one cannot pull the vote count in front of it.
+    expect(within(stage).getByText('Sam').tagName).toBe('BDI')
+    for (const li of cards()) expect(li.querySelector('p[dir="auto"]')).not.toBeNull()
+  })
+
+  it('puts Start discussing under the next topic, before the ties', () => {
+    setup('u1', REVEALED, RESULTS)
+    const after = (a: HTMLElement, b: HTMLElement) =>
+      !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+    const start = screen.getByRole('button', { name: 'Start discussing' })
+    expect(after(screen.getByRole('heading', { level: 1 }), start)).toBe(true)
+    expect(after(start, screen.getByText('One tie.'))).toBe(true)
   })
 
   it('breaks ties at random when that is the setting', async () => {
@@ -365,7 +385,7 @@ describe('Vote board announcements and focus', () => {
     expect(said()).not.toContain('Voting closed')
     rerender(REVEALED, RESULTS)
     expect(said()).toContain('Voting closed. Here is the agenda.')
-    expect(screen.getByRole('heading', { level: 1, name: 'Here is the agenda' })).toHaveFocus()
+    expect(screen.getByRole('heading', { level: 1, name: 'Onboarding' })).toHaveFocus()
   })
 
   it('moves focus from a dot button to the To discuss heading when the dots go', async () => {

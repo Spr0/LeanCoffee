@@ -25,6 +25,8 @@ import {
 import { TOPIC_MAX, TopicEditor } from './TopicTools'
 
 const PER_PERSON = 5
+// The stage's page heading when it says what to do, the same size in every phase.
+const STAGE_TITLE = 'text-[32px] leading-tight font-extrabold tracking-tight'
 // Nothing is discussed yet; Discussed keeps the board's shape from the first phase on.
 const NO_VOTES = new Map<string, number>()
 
@@ -129,8 +131,12 @@ export default function Brainstorm({ ctx, remaining }: PhaseProps) {
           ))}
           {others.map((t) => (
             <li key={t.id} className="rounded-xl border-2 border-line-soft bg-panel p-3">
-              <p className="text-[15px] leading-snug font-bold break-words">{t.text}</p>
-              <p className="mt-1 text-[13px] text-muted">{t.author_name}</p>
+              <p dir="auto" className="text-[15px] leading-snug font-bold wrap-anywhere">
+                {t.text}
+              </p>
+              <p dir="auto" className="mt-1 text-[13px] wrap-anywhere text-muted">
+                {t.author_name}
+              </p>
             </li>
           ))}
         </ul>
@@ -166,13 +172,16 @@ export default function Brainstorm({ ctx, remaining }: PhaseProps) {
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
         <div className="min-w-0 grow basis-64">
           <span className={ACCENT_CHIP}>WRITING SILENTLY</span>
-          <h1 className="mt-3 text-[36px] leading-[1.1] font-extrabold tracking-tight">
+          {/* Focusable, so focus can land here when the Lobby's Start brainstorm goes. */}
+          <h1 tabIndex={-1} className={`mt-3 ${STAGE_TITLE}`}>
             Write the topics you want to talk about
           </h1>
           <p className="mt-2 text-[16px] text-muted">
             {hide
               ? `One topic per card, up to ${PER_PERSON} each. Everyone else's cards stay face down until Clarify.`
               : `One topic per card, up to ${PER_PERSON} each. Everyone sees the cards as they are written.`}
+            {/* Said here rather than under the buttons, so Add topic stays on a 720 px share. */}
+            {isFacilitator && notStarted && ' People can add topics before you start the clock.'}
           </p>
           {!isFacilitator && notStarted && (
             <p className="mt-4 rounded-xl bg-teal-soft p-4 text-[15px] font-bold">
@@ -212,9 +221,6 @@ export default function Brainstorm({ ctx, remaining }: PhaseProps) {
               <Button variant="secondary" className="h-14" onClick={end}>
                 End brainstorm now
               </Button>
-              <p className="basis-full text-[13px] text-muted">
-                People can add topics before you start it.
-              </p>
             </>
           ) : (
             <>
@@ -233,6 +239,7 @@ export default function Brainstorm({ ctx, remaining }: PhaseProps) {
         </label>
         <textarea
           id={fieldId}
+          dir="auto"
           aria-describedby={countId}
           value={text}
           maxLength={TOPIC_MAX}
@@ -318,7 +325,9 @@ function YourCard({
       ) : (
         <>
           <p className={CARD_TAG}>YOURS</p>
-          <p className="text-[15px] leading-snug font-bold break-words">{t.text}</p>
+          <p dir="auto" className="text-[15px] leading-snug font-bold wrap-anywhere">
+            {t.text}
+          </p>
           <div className="mt-2 grid grid-cols-2 gap-2">
             <Button
               id={editId}
