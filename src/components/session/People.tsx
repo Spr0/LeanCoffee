@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { isMuted, setMuted } from '../../lib/chime'
 import { isPresent } from '../../lib/time'
+import type { Participant } from '../../lib/types'
 import type { BoardContext } from '../../pages/BoardView'
 import { useNow } from '../../state/useNow'
 import { Avatar, Button, Switch } from '../ui'
@@ -8,11 +9,20 @@ import { Dialog } from './Dialog'
 
 const RECONNECTING_AFTER_MS = 90_000
 
+/** The facilitator first, then everyone in the order they joined. */
+export function byJoin(people: Participant[], facilitatorId: string | null): Participant[] {
+  return [...people].sort(
+    (a, b) =>
+      Number(b.user_id === facilitatorId) - Number(a.user_id === facilitatorId) ||
+      a.joined_at.localeCompare(b.joined_at),
+  )
+}
+
 /** Who is connected, and whether the facilitator's heartbeat has gone quiet. */
 function usePresence(ctx: BoardContext) {
   const { board, state, isFacilitator } = ctx
   const now = useNow(5000)
-  const people = board.data.participants
+  const people = byJoin(board.data.participants, state.facilitator_user_id)
   const present = people.filter((p) => isPresent(p.last_seen_at, now, board.offsetMs))
   const facilitator = people.find((p) => p.user_id === state.facilitator_user_id)
   // Spec section 8: everyone else sees when the facilitator's heartbeat has gone quiet. Browsers
@@ -36,7 +46,14 @@ export function PeoplePanel({ ctx, inDialog = false }: { ctx: BoardContext; inDi
   const { board, state, userId, isFacilitator, act } = ctx
   const { now, people, present, facilitator, reconnecting, notice } = usePresence(ctx)
   const [dialog, setDialog] = useState<'pass' | 'people' | null>(null)
+  // The facilitator's dialogs close for good when the role moves away, so nothing in them can be
+  // pressed and they do not reopen if it comes back.
+  if (!isFacilitator && dialog !== null) setDialog(null)
   const [choice, setChoice] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState<string | null>(null)
+  const manageTitle = useRef<HTMLHeadingElement>(null)
+  // After Cancel, focus goes back to the Remove button that asked.
+  const returnTo = useRef<string | null>(null)
   const [muted, setMutedState] = useState(isMuted)
   const others = present.filter((p) => p.user_id !== userId)
   const chosen = others.find((p) => p.user_id === choice)
@@ -88,10 +105,10 @@ export function PeoplePanel({ ctx, inDialog = false }: { ctx: BoardContext; inDi
           <span aria-hidden="true" className="size-2.5 rounded-full bg-teal" />
           {present.length} {present.length === 1 ? 'person' : 'people'} connected
         </span>
+        {/* The words say the state; a pressed state as well read as "Sound off, not pressed". */}
         <button
           type="button"
           className="min-h-11 rounded-lg px-2 font-bold text-ink underline"
-          aria-pressed={!muted}
           onClick={() => {
             setMuted(!muted)
             setMutedState(!muted)
@@ -102,7 +119,7 @@ export function PeoplePanel({ ctx, inDialog = false }: { ctx: BoardContext; inDi
       </div>
 
       <Dialog
-        open={dialog === 'pass'}
+        open={isFacilitator && dialog === 'pass'}
         onClose={() => setDialog(null)}
         title="Pass the facilitator role"
       >
@@ -154,35 +171,72 @@ export function PeoplePanel({ ctx, inDialog = false }: { ctx: BoardContext; inDi
       </Dialog>
 
       <Dialog
-        open={dialog === 'people'}
-        onClose={() => setDialog(null)}
+        open={isFacilitator && dialog === 'people'}
+        onClose={() => {
+          setDialog(null)
+          setConfirming(null)
+        }}
         title="People on this board"
+        titleRef={manageTitle}
       >
-        <ul className="mt-4 flex flex-col gap-2">
-          {people.map((p) => (
-            <li
-              key={p.id}
-              className="flex items-center gap-3 rounded-xl border border-line px-4 py-2"
-            >
-              <Avatar name={p.display_name} />
-              <span className="flex-1 text-[16px] font-bold">
-                {p.display_name}
-                {!isPresent(p.last_seen_at, now, board.offsetMs) && (
-                  <span className="ml-2 font-medium text-muted">away</span>
+        <ul aria-label="People on this board" className="mt-4 flex flex-col gap-2">
+          {people.map((p) => {
+            const self = p.user_id === userId
+            const creator = p.user_id === state.owner_user_id
+            const asking = confirming === p.user_id
+            return (
+              <li
+                key={p.id}
+                className="flex min-h-[62px] flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-line px-4 py-2"
+              >
+                <Avatar name={p.display_name} />
+                <span className="min-w-0 flex-1 text-[16px] font-bold break-words">
+                  {p.display_name}
+                  {!isPresent(p.last_seen_at, now, board.offsetMs) && (
+                    <span className="ml-2 font-medium text-muted">away</span>
+                  )}
+                </span>
+                {self || creator ? (
+                  <span className="text-[14px] text-muted">{self ? 'You' : 'Board creator'}</span>
+                ) : asking ? (
+                  <RemoveConfirm
+                    name={p.display_name}
+                    onCancel={() => {
+                      returnTo.current = p.user_id
+                      setConfirming(null)
+                    }}
+                    onRemove={async () => {
+                      if (
+                        await act('remove_participant', {
+                          p_board: state.board_id,
+                          p_user: p.user_id,
+                        })
+                      ) {
+                        setConfirming(null)
+                        // The row goes once the list reloads; focus waits at the top.
+                        manageTitle.current?.focus()
+                      }
+                    }}
+                  />
+                ) : (
+                  // The name starts with the visible word (WCAG 2.5.3) and says who goes.
+                  <Button
+                    variant="ghost"
+                    aria-label={`Remove ${p.display_name}`}
+                    ref={(el) => {
+                      if (el && returnTo.current === p.user_id) {
+                        returnTo.current = null
+                        el.focus()
+                      }
+                    }}
+                    onClick={() => setConfirming(p.user_id)}
+                  >
+                    Remove
+                  </Button>
                 )}
-              </span>
-              {p.user_id !== userId && p.user_id !== state.owner_user_id && (
-                <Button
-                  variant="ghost"
-                  onClick={() =>
-                    act('remove_participant', { p_board: state.board_id, p_user: p.user_id })
-                  }
-                >
-                  Remove
-                </Button>
-              )}
-            </li>
-          ))}
+              </li>
+            )
+          })}
         </ul>
         <div className="mt-4">
           <Switch
@@ -203,9 +257,53 @@ export function PeoplePanel({ ctx, inDialog = false }: { ctx: BoardContext; inDi
           from the link under a new name.
         </p>
         <div className="mt-5 flex justify-end">
-          <Button onClick={() => setDialog(null)}>Done</Button>
+          <Button variant="ghost" onClick={() => setDialog(null)}>
+            Done
+          </Button>
         </div>
       </Dialog>
+    </div>
+  )
+}
+
+/**
+ * Removing someone asks first, in their row: focus moves to Cancel, so a second Enter on Remove
+ * cannot cut anyone off.
+ */
+function RemoveConfirm({
+  name,
+  onCancel,
+  onRemove,
+}: {
+  name: string
+  onCancel: () => void
+  onRemove: () => Promise<void>
+}) {
+  const cancel = useRef<HTMLButtonElement>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => cancel.current?.focus(), [])
+  return (
+    <div
+      role="group"
+      aria-label={`Remove ${name}?`}
+      className="flex basis-full flex-wrap items-center justify-end gap-2"
+    >
+      <span className="mr-auto text-[15px] font-bold">Remove {name}?</span>
+      <Button ref={cancel} variant="ghost" onClick={onCancel}>
+        Cancel
+      </Button>
+      <Button
+        variant="danger"
+        aria-disabled={busy || undefined}
+        onClick={async () => {
+          if (busy) return
+          setBusy(true)
+          await onRemove()
+          setBusy(false)
+        }}
+      >
+        Remove {name}
+      </Button>
     </div>
   )
 }
@@ -217,6 +315,12 @@ export function PeoplePanel({ ctx, inDialog = false }: { ctx: BoardContext; inDi
 export function PeopleButton({ ctx }: { ctx: BoardContext }) {
   const { present, facilitator, reconnecting, notice } = usePresence(ctx)
   const [open, setOpen] = useState(false)
+  const title = useRef<HTMLHeadingElement>(null)
+  // Passing or losing the facilitator role removes the control that had focus in the open dialog.
+  useEffect(() => {
+    const active = document.activeElement
+    if (open && (active === null || active === document.body)) title.current?.focus()
+  }, [open, ctx.isFacilitator])
   return (
     <>
       {reconnecting && (
@@ -235,7 +339,7 @@ export function PeopleButton({ ctx }: { ctx: BoardContext }) {
       <Button variant="ghost" className="px-3" aria-haspopup="dialog" onClick={() => setOpen(true)}>
         {present.length} {present.length === 1 ? 'person' : 'people'}
       </Button>
-      <Dialog open={open} onClose={() => setOpen(false)} title="People">
+      <Dialog open={open} onClose={() => setOpen(false)} title="People" titleRef={title}>
         <ul aria-label="People connected" className="mt-4 flex flex-wrap gap-2">
           {present.map((p) => (
             <li
@@ -251,7 +355,9 @@ export function PeopleButton({ ctx }: { ctx: BoardContext }) {
           <PeoplePanel ctx={ctx} inDialog />
         </div>
         <div className="mt-5 flex justify-end">
-          <Button onClick={() => setOpen(false)}>Done</Button>
+          <Button variant="ghost" onClick={() => setOpen(false)}>
+            Done
+          </Button>
         </div>
       </Dialog>
     </>

@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatClock } from '../../lib/time'
+import { echoStatus } from './Dialog'
 
-/** Screen readers hear the timer only at 1:00, 0:30 and 0:00 (spec F15). */
+/**
+ * Screen readers hear the timer only at 1:00, 0:30 and 0:00 (spec F15), politely, and also in an
+ * open dialog, which hides the page behind it.
+ */
 function useAnnouncement(remaining: number | null): string {
   const [message, setMessage] = useState('')
   const last = useRef<number | null>(null)
@@ -14,7 +18,10 @@ function useAnnouncement(remaining: number | null): string {
       [30_000, '30 seconds left'],
       [0, "Time's up"],
     ] as const) {
-      if (prev > at && remaining <= at) setMessage(text)
+      if (prev > at && remaining <= at) {
+        setMessage(text)
+        echoStatus(text)
+      }
     }
   }, [remaining])
   return message
@@ -23,7 +30,7 @@ function useAnnouncement(remaining: number | null): string {
 export function TimerAnnouncer({ remaining }: { remaining: number | null }) {
   const message = useAnnouncement(remaining)
   return (
-    <p className="sr-only" aria-live="assertive">
+    <p className="sr-only" aria-live="polite">
       {message}
     </p>
   )
@@ -80,10 +87,12 @@ export function ClockPanel({
 /**
  * Stage ring timer, built for Teams screen sharing: 72 px digits, a 5/100 stroke, turns orange
  * at 1:00 with a "1 min left" text label, and "Time's up" at zero. Never color alone. A clock of a
- * minute or less (a pitch, a tie-break) passes a shorter `urgentMs`, as 0:10 with "10 s left", so
- * it does not look urgent from the start. The digits drop to 64 px where 72 px would cross the
+ * minute or less (a pitch, a tie-break) passes a shorter `urgentMs`, as 0:10 with "Under 10 s"
+ * (the digits keep counting), so it does not look urgent from the start. The digits drop to 64 px where 72 px would cross the
  * stroke: rings under 200 px, and ten minutes or more (five characters) in rings under 260 px.
- * Five characters at 64 px need a 240 px ring.
+ * Five characters at 64 px need a 240 px ring. In forced colors (Windows High Contrast) the ring
+ * takes system colors, the remaining time as the strong arc, and the digits draw no backplate
+ * over the stroke.
  */
 export function RingTimer({
   remaining,
@@ -113,7 +122,7 @@ export function RingTimer({
       : urgent
         ? urgentMs >= 60_000
           ? `${Math.round(urgentMs / 60_000)} min left`
-          : `${Math.round(urgentMs / 1000)} s left`
+          : `Under ${Math.round(urgentMs / 1000)} s`
         : `of ${formatClock(totalMs)}`
   return (
     <div
@@ -123,8 +132,17 @@ export function RingTimer({
       aria-label={done ? "Time's up" : spoken(ms)}
     >
       <svg viewBox="0 0 100 100" className="size-full -rotate-90" aria-hidden="true">
-        <circle cx="50" cy="50" r={r} fill="none" stroke="var(--line)" strokeWidth="5" />
         <circle
+          cx="50"
+          cy="50"
+          r={r}
+          fill="none"
+          stroke="var(--line)"
+          strokeWidth="5"
+          className="forced-colors:stroke-[GrayText]"
+        />
+        <circle
+          className="forced-colors:stroke-[Highlight]"
           cx="50"
           cy="50"
           r={r}
@@ -136,14 +154,14 @@ export function RingTimer({
           strokeDashoffset={circumference * (1 - fraction)}
         />
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
+      <div className="absolute inset-0 flex flex-col items-center justify-center forced-color-adjust-none forced-colors:text-[CanvasText]">
         <span
-          className={`${big ? 'text-[72px]' : 'text-[64px]'} leading-none font-extrabold tabular-nums ${urgent ? 'text-urgent' : 'text-ink'}`}
+          className={`${big ? 'text-[72px]' : 'text-[64px]'} leading-none font-extrabold tabular-nums ${urgent ? 'text-urgent' : 'text-ink'} forced-colors:text-[CanvasText]`}
         >
           {clock}
         </span>
         <span
-          className={`mt-2 text-[18px] font-extrabold ${urgent ? 'text-urgent' : 'text-muted'}`}
+          className={`mt-2 text-[18px] font-extrabold ${urgent ? 'text-urgent' : 'text-muted'} forced-colors:text-[CanvasText]`}
         >
           {label}
         </span>

@@ -1,20 +1,25 @@
-import { useId, type ButtonHTMLAttributes, type ReactNode } from 'react'
+import { useId, type ButtonHTMLAttributes, type ReactNode, type Ref } from 'react'
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'dangerOutline'
 
+/*
+ * Every variant has a 2 px border, transparent on the filled ones: forced colors (Windows High
+ * Contrast) drop the fill and draw the border, so a primary button keeps its edge. In dark mode
+ * --surface equals --panel, so the outlined buttons hover to --line.
+ */
 const VARIANTS: Record<Variant, string> = {
-  primary: 'bg-teal text-on-teal hover:opacity-90',
+  primary: 'border-2 border-transparent bg-teal text-on-teal hover:opacity-90',
   secondary: 'border-2 border-teal text-teal bg-panel hover:bg-teal-soft',
-  ghost: 'border-2 border-line text-ink bg-panel hover:bg-surface',
-  danger: 'bg-danger text-ground hover:opacity-90',
-  dangerOutline: 'border-2 border-danger text-danger bg-panel hover:bg-surface',
+  ghost: 'border-2 border-line text-ink bg-panel hover:bg-surface dark:hover:bg-line',
+  danger: 'border-2 border-transparent bg-danger text-ground hover:opacity-90',
+  dangerOutline: 'border-2 border-danger text-danger bg-panel hover:bg-surface dark:hover:bg-line',
 }
 
 export function Button({
   variant = 'primary',
   className = '',
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; ref?: Ref<HTMLButtonElement> }) {
   return (
     <button
       type="button"
@@ -51,6 +56,10 @@ export function Avatar({ name }: { name: string }) {
   )
 }
 
+/**
+ * An on/off switch with a 44 px target around its 32 px track. The knob's side says the state, not
+ * only its color; in forced colors the knob takes the text color and an on track the highlight.
+ */
 export function Switch({
   checked,
   onChange,
@@ -65,7 +74,7 @@ export function Switch({
   disabled?: boolean
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-line-soft py-3">
+    <div className="flex items-center justify-between gap-4 border-b border-line-soft py-2.5">
       <div>
         <p className="text-[15px] font-bold">{label}</p>
         <p className="text-[13px] text-muted">{hint}</p>
@@ -77,11 +86,16 @@ export function Switch({
         aria-label={label}
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={`relative h-8 w-13 shrink-0 rounded-full border-2 disabled:opacity-60 ${checked ? 'border-teal bg-teal' : 'border-line-strong bg-line'}`}
+        className="group flex h-11 w-15 shrink-0 items-center justify-center rounded-full disabled:opacity-60"
       >
         <span
-          className={`absolute top-0.5 size-6 rounded-full bg-white shadow transition-[left] ${checked ? 'left-[22px]' : 'left-0.5'}`}
-        />
+          aria-hidden="true"
+          className={`relative h-8 w-13 rounded-full border-2 ${checked ? 'border-teal bg-teal forced-colors:bg-[Highlight]' : 'border-line-strong bg-line'}`}
+        >
+          <span
+            className={`absolute top-0.5 size-6 rounded-full bg-white shadow transition-[left] forced-colors:bg-[CanvasText] ${checked ? 'left-[22px]' : 'left-0.5'}`}
+          />
+        </span>
       </button>
     </div>
   )

@@ -36,7 +36,18 @@ describe('RingTimer', () => {
     rerender(
       <RingTimer remaining={9_000} totalMs={30_000} paused={false} size={200} urgentMs={10_000} />,
     )
-    expect(screen.getByText('10 s left')).toBeInTheDocument()
+    // The digits keep counting down, so the label does not name a number of seconds left.
+    expect(screen.getByText('Under 10 s')).toBeInTheDocument()
     expect(digits()).toHaveClass('text-urgent')
+  })
+
+  it('says the minute marks politely, without interrupting', () => {
+    const { rerender, container } = render(
+      <RingTimer remaining={61_000} totalMs={300_000} paused={false} size={200} />,
+    )
+    rerender(<RingTimer remaining={59_000} totalMs={300_000} paused={false} size={200} />)
+    const line = container.querySelector('[aria-live]')
+    expect(line).toHaveAttribute('aria-live', 'polite')
+    expect(line).toHaveTextContent('1 minute left')
   })
 })
