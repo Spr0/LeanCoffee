@@ -143,7 +143,10 @@ test('six people run a whole session', async ({ browser }) => {
   expect(new Set(voteRows.map((r: { user_id: string }) => r.user_id)).size).toBeLessThanOrEqual(1)
   await expect(pat.getByRole('heading', { name: 'Here is the agenda' })).toHaveCount(0)
   await at(pages, 'Tess').getByRole('button', { name: "I'm done" }).click()
-  await expect(pat.getByRole('heading', { name: 'Here is the agenda' })).toBeVisible()
+  // The reveal re-ranks every topic, and six browsers reload the board at once.
+  await expect(pat.getByRole('heading', { name: 'Here is the agenda' })).toBeVisible({
+    timeout: 20_000,
+  })
   await expect(
     pat.getByRole('listitem').filter({ hasText: 'Onboarding remote hires' }),
   ).toContainText('5')

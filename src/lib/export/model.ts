@@ -1,4 +1,4 @@
-import { cards, dotTotals } from '../session'
+import { boardTotals, cards } from '../session'
 import type { BoardData } from '../../state/useBoard'
 
 export interface ExportTopic {
@@ -27,7 +27,9 @@ export interface ExportModel {
 export function buildModel(data: BoardData, now: Date): ExportModel {
   const state = data.state
   if (!state) throw new Error('Board not loaded')
-  const totals = dotTotals(data.votes, state.base_round)
+  // The same dots as the board: after a re-vote, discussed and skipped topics keep the dots that
+  // ranked them, from the last earlier round they got any in.
+  const totals = boardTotals(data.votes, data.topics, state.base_round)
   // Merged cards carry their duplicates' text so nothing written is lost.
   const merged = (id: string) => data.topics.filter((t) => t.merged_into === id).map((t) => t.text)
   const list = cards(data.topics)
