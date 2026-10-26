@@ -81,14 +81,16 @@ describe('QueueColumn', () => {
     expect(screen.getByRole('list', { name: 'To discuss 2' })).toHaveFocus()
   })
 
-  it('moves a topic up the queue; Up next has no move', async () => {
-    const { act, user, rerender } = queue()
+  it('moves a topic up the queue and says where it went; Up next has no move', async () => {
+    const { act, onNote, user, rerender } = queue()
     const top = screen.getByRole('button', { name: 'Move "Open topic" up' })
     expect(top).toHaveAttribute('aria-disabled', 'true')
     await user.click(top)
     expect(act).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Move "Later topic" up' }))
     expect(act).toHaveBeenCalledWith('reorder_topics', { p_board: 'b1', p_ids: ['t5', 't1'] })
+    // The arrow keeps focus and its name, so the live line says the new place.
+    expect(onNote).toHaveBeenCalledWith('"Later topic" is now up next.')
     // At the top its button stays in place, so focus is not lost.
     rerender(TOPICS.map((t) => (t.id === 't5' ? { ...t, sort_order: 0 } : t)))
     const moved = screen.getByRole('button', { name: 'Move "Later topic" up' })

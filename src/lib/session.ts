@@ -117,7 +117,7 @@ export const LONG_TOPIC = 45
 
 /**
  * Stage ring size in px. A long topic or the extend vote shrinks the ring, never the type: the
- * topic stays at 44 px and the digits at 72 px for Teams screen sharing. A clock that shows 10:00
+ * topic stays at 44 px and the digits at 64 px or more for Teams screen sharing. A clock that shows 10:00
  * or more takes the 240 px ring, as its five characters need the room inside even at 64 px. The
  * size follows the clock as shown, so a 10:00 discussion drops back to the smaller ring at 9:59
  * instead of squeezing a long topic beside a 240 px ring for the whole topic.

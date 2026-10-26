@@ -132,11 +132,28 @@ export default function Discuss({ ctx: live, remaining: liveRemaining }: PhasePr
   const shownRound =
     round ?? (last && (remaining === 0 ? thisClocks : recentlyClosed) ? last : undefined)
   const lastDiscussed = discussed.at(-1)
+  // The topic that last left the stage, as this browser saw it go. Skip and Defer leave the last
+  // discussed topic as it was, so it is not always that one. A browser that has seen nothing leave
+  // yet (it just loaded) takes the last discussed topic. The server keeps no record of this.
+  const [lastLeft, setLastLeft] = useState<string | null>(null)
+  const leftTopic = topics.find((t) => t.id === (lastLeft ?? lastDiscussed?.id))
   // A Move on vote takes the topic off stage on the server; its result stays up until the next
   // topic starts, so the facilitator can still override it. Rounds force-closed have no counts.
+  // Once another topic has been on stage (skipped or deferred since), the result has gone with it:
+  // Extend anyway would bring back a topic that left two topics ago.
   const lastDiscussedRound = lastDiscussed && lastRound(extendRounds, lastDiscussed.id)
+  const votedSince = (r: ExtendRound) =>
+    r.closed_at !== null &&
+    extendRounds.some(
+      (o) => o.topic_id !== r.topic_id && Date.parse(o.opened_at) > Date.parse(r.closed_at ?? ''),
+    )
   const movedOn =
-    !current && lastDiscussedRound?.result === 'move_on' && lastDiscussedRound.keep_count !== null
+    !current &&
+    leftTopic !== undefined &&
+    leftTopic === lastDiscussed &&
+    lastDiscussedRound?.result === 'move_on' &&
+    lastDiscussedRound.keep_count !== null &&
+    !votedSince(lastDiscussedRound)
       ? lastDiscussedRound
       : undefined
 
@@ -166,6 +183,11 @@ export default function Discuss({ ctx: live, remaining: liveRemaining }: PhasePr
   const [seen, setSeen] = useState({ key: moveKey, topics, rounds: extendRounds })
   if (seen.key !== moveKey) {
     setSeen({ key: moveKey, topics, rounds: extendRounds })
+    const status = new Map(topics.map((t) => [t.id, t.status]))
+    const left = seen.topics.find(
+      (t) => t.status === 'discussing' && status.get(t.id) !== 'discussing',
+    )
+    if (left) setLastLeft(left.id)
     const message = boardMoves(
       seen,
       { topics, rounds: extendRounds },
@@ -218,8 +240,9 @@ export default function Discuss({ ctx: live, remaining: liveRemaining }: PhasePr
   // A pressed stage button often leaves with the stage's old content (Next topic, Skip, Start the
   // clock, Call vote now). Focus then moves to the stage heading instead of the top of the page;
   // after a Move on result, to the result, so Extend anyway is the next Tab stop.
+  // Losing the facilitator role takes the stage controls away too.
   const { area: stage, target: heading } = useRefocus<HTMLElement, HTMLElement>(
-    `${current?.id}|${round?.id}|${shownRound?.id}`,
+    `${current?.id}|${round?.id}|${shownRound?.id}|${isFacilitator}`,
   )
   const wrapUp = () => press.run('start_phase', { p_board: state.board_id, p_phase: 'wrapup' })
 
@@ -238,11 +261,12 @@ export default function Discuss({ ctx: live, remaining: liveRemaining }: PhasePr
       forms={forms}
       carry={
         // A draft, or a form someone is in, for the topic that just left (auto-start next).
-        lastDiscussed &&
-        (focused === lastDiscussed.id ||
-          (drafts[lastDiscussed.id]?.text ?? '').trim() ||
-          (drafts[lastDiscussed.id]?.owner ?? '').trim())
-          ? lastDiscussed
+        leftTopic &&
+        leftTopic.id !== current.id &&
+        (focused === leftTopic.id ||
+          (drafts[leftTopic.id]?.text ?? '').trim() ||
+          (drafts[leftTopic.id]?.owner ?? '').trim())
+          ? leftTopic
           : undefined
       }
     />
@@ -281,10 +305,10 @@ export default function Discuss({ ctx: live, remaining: liveRemaining }: PhasePr
         press={press}
         onWrapUp={wrapUp}
       />
-      {lastDiscussed && (
+      {leftTopic && (
         <ActionsFor
           ctx={ctx}
-          topic={lastDiscussed}
+          topic={leftTopic}
           forms={forms}
           label="Actions from the last topic"
           list={false}
@@ -418,9 +442,20 @@ function Stage({
       document.getElementById(editId)?.focus()
     }
   }, [editing, editId])
-  // A topic brought back after an extension restarts at the full discussion time.
+  // An extended topic's clock runs for the extension time; a topic brought back after an extension
+  // restarts at the full discussion time. Time added past that makes the clock longer: "of" names
+  // the longest it has been since the clock last started, so it does not count down with the
+  // digits. The start time comes with the clock in one row, so an extension's restart resets it
+  // even while the topic's extension count is still on its way; a pause (no start time) keeps it.
+  const segment = state.timer_started_at
+  const [peak, setPeak] = useState({ segment, ms: 0 })
+  const restarted = segment !== null && peak.segment !== segment
+  const peakMs = restarted ? 0 : peak.ms
+  if (restarted || (remaining ?? 0) > peakMs)
+    setPeak({ segment: segment ?? peak.segment, ms: Math.max(peakMs, remaining ?? 0) })
   const totalMs = Math.max(
     remaining ?? 0,
+    peakMs,
     (topic.extensions > 0 ? state.settings.extend_s : state.settings.discuss_s) * 1000,
   )
   const outcome = (p_outcome: 'discussed' | 'deferred' | 'skipped') =>
@@ -518,13 +553,19 @@ function Stage({
           <Button {...busy} onClick={() => outcome('discussed')}>
             Next topic
           </Button>
-          <Button variant="ghost" {...busy} onClick={() => outcome('deferred')}>
-            Defer to later
-          </Button>
-          <Button variant="ghost" {...busy} onClick={() => outcome('skipped')}>
-            Skip
-          </Button>
-          {!editing && (
+          {/* During the 15-second vote the clock and Next topic are enough, and one row of them
+              stays on a 720 px share under the vote. */}
+          {!round && (
+            <>
+              <Button variant="ghost" {...busy} onClick={() => outcome('deferred')}>
+                Defer to later
+              </Button>
+              <Button variant="ghost" {...busy} onClick={() => outcome('skipped')}>
+                Skip
+              </Button>
+            </>
+          )}
+          {!editing && !round && (
             <Button
               id={editId}
               variant="ghost"
@@ -652,7 +693,7 @@ function ExtendPanel({
   roundId: string
   roundLeft: number | null
 }) {
-  const { board, state, userId, act } = ctx
+  const { board, state, userId, isFacilitator, act } = ctx
   const now = useNow(5000)
   const panel = useRef<HTMLElement>(null)
   const round = board.data.extendRounds.find((r) => r.id === roundId)
@@ -737,7 +778,8 @@ function ExtendPanel({
             : `${groupExtended ? 'The group chose to keep going' : 'The facilitator extended it'}: the clock restarts at ${formatClock(state.settings.extend_s * 1000)}.`}
         </p>
       )}
-      {!closed && (
+      {/* Not on the facilitator's stage, which needs the room for Next topic on the share. */}
+      {!closed && !isFacilitator && (
         <p className="mt-3 text-[14px] text-muted">
           Results show when everyone has voted or the 15 seconds are up.
         </p>

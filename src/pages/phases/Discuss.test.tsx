@@ -325,6 +325,21 @@ describe('Discuss board', () => {
     expect(screen.getByRole('timer')).toHaveStyle({ width: '220px' })
   })
 
+  it('names the longest the clock has run, not the time left, after time is added', () => {
+    const { ctx, view } = setup('u2', 'discussing', [], {}, undefined)
+    view.rerender(<Discuss ctx={{ ...ctx }} remaining={352_000} />)
+    expect(screen.getByText('of 5:52')).toBeInTheDocument()
+    view.rerender(<Discuss ctx={{ ...ctx }} remaining={351_000} />)
+    expect(screen.getByText('of 5:52')).toBeInTheDocument()
+    // An extension restarts the clock: the length is the extension again.
+    const restarted = makeCtx('u2', board(), ctx.act, {
+      phase_ends_at: ends(),
+      timer_started_at: new Date().toISOString(),
+    })
+    view.rerender(<Discuss ctx={restarted} remaining={180_000} />)
+    expect(screen.getByText('of 5:00')).toBeInTheDocument()
+  })
+
   it('makes room in the ring for a clock of 10:00 or more', () => {
     const act = vi.fn(async () => true)
     const ctx = makeCtx('u2', board(), act, { phase_ends_at: ends() })
@@ -450,10 +465,19 @@ describe('Discuss extend vote', () => {
     expect(screen.getByText(said)).not.toBe(first)
   })
 
-  it('hides Call vote now while the vote is open', () => {
-    setup('u1', 'discussing', [{ ...round(0, 0, null), closed_at: null, keep_count: null }])
+  it('keeps only the clock and Next topic under the vote while it is open', () => {
+    const open = { ...round(0, 0, null), closed_at: null, keep_count: null }
+    const { view } = setup('u1', 'discussing', [open])
     expect(screen.getByRole('button', { name: 'Next topic' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Call vote now' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
+    for (const name of ['Call vote now', 'Defer to later', 'Skip', 'Edit "On stage"'])
+      expect(screen.queryByRole('button', { name })).toBeNull()
+    // The facilitator's share keeps the room for them; everyone else is told how the vote ends.
+    const hint = 'Results show when everyone has voted or the 15 seconds are up.'
+    expect(screen.queryByText(hint)).toBeNull()
+    view.unmount()
+    setup('u2', 'discussing', [open])
+    expect(screen.getByText(hint)).toBeInTheDocument()
   })
 
   it('announces a Move on vote once, in the live line, not in the panels', () => {
@@ -493,6 +517,58 @@ describe('Discuss extend vote', () => {
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
     await user.click(screen.getByRole('button', { name: 'Extend 3:00 anyway' }))
     expect(act).toHaveBeenCalledWith('extend_topic', { p_board: 'b1' }, STALE_PRESS)
+  })
+
+  it('drops the Move on result once another topic has been on stage and left it', async () => {
+    for (const status of ['skipped', 'open'] as const) {
+      const { ctx, view, user } = setup('u1', 'discussed', [round(0, 2, 'move_on')])
+      expect(screen.getByText('The group chose to move on.')).toBeInTheDocument()
+      const show = (next: Topic['status']) => {
+        const later = makeCtx(
+          'u1',
+          [
+            makeTopic('t1', 'On stage', 'discussed', 1),
+            makeTopic('t2', 'Next up', next, 2),
+            makeTopic('t3', 'Skipped topic', 'skipped', 3),
+          ],
+          ctx.act,
+          { phase_ends_at: next === 'discussing' ? ends() : null },
+        )
+        later.board.data.extendRounds = [round(0, 2, 'move_on')]
+        view.rerender(<Discuss ctx={later} remaining={next === 'discussing' ? 300_000 : null} />)
+      }
+      // Next up starts, then is skipped or deferred: the vote was about "On stage", not about it.
+      show('discussing')
+      show(status)
+      expect(screen.queryByText('The group chose to move on.')).toBeNull()
+      expect(screen.queryByRole('button', { name: /anyway/ })).toBeNull()
+      // "Actions from the last topic" is the topic that just left the stage.
+      await user.type(screen.getByLabelText('New action'), 'Write it up')
+      await user.click(screen.getByRole('button', { name: 'Add action' }))
+      expect(ctx.act).toHaveBeenLastCalledWith(
+        'add_action',
+        expect.objectContaining({ p_topic: 't2' }),
+      )
+      view.unmount()
+    }
+  })
+
+  it('drops the Move on result on a fresh load once another topic has had a vote', () => {
+    const later = {
+      ...round(0, 0, null),
+      id: 'r2',
+      topic_id: 't2',
+      opened_at: new Date(Date.now() + 1000).toISOString(),
+      closed_at: new Date(Date.now() + 2000).toISOString(),
+      keep_count: null,
+    }
+    setup('u1', 'discussed', [round(0, 2, 'move_on'), later], {}, [
+      makeTopic('t1', 'On stage', 'discussed', 1),
+      makeTopic('t2', 'Next up', 'skipped', 2),
+      makeTopic('t3', 'Last one', 'open', 3),
+    ])
+    expect(screen.queryByText('The group chose to move on.')).toBeNull()
+    expect(screen.queryByRole('button', { name: /anyway/ })).toBeNull()
   })
 
   it('offers the next topic, a re-vote and wrap-up between topics', async () => {
