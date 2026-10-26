@@ -187,6 +187,14 @@ describe('Discuss board', () => {
       )
     })
 
+    it('says a skip that arrives in the same reload as its start', () => {
+      const queued = moment([at('a', 'open'), at('b', 'open')])
+      expect(moves(queued, moment([at('a', 'skipped'), at('b', 'open')]))).toBe('"a" was skipped.')
+      // Its extend vote opened and closed by the Skip in the same reload: said once.
+      const after = moment([at('a', 'skipped'), at('b', 'open')], [round('a', null, null)])
+      expect(moves(queued, after)).toBe('"a" was skipped.')
+    })
+
     it('says a Move on vote once, whichever table reloads first', () => {
       const open = round('a', null, null, false)
       const voted = round('a', 'move_on', [1, 1, 4])

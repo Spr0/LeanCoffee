@@ -206,7 +206,10 @@ export function boardMoves(before: BoardMoment, after: BoardMoment, extendMs: nu
     }
   }
   for (const t of after.topics) {
-    if (was.get(t.id) !== 'discussing' || t.status === 'discussing') continue
+    // A Skip pressed just after Start can reach a browser in one reload, from open to skipped.
+    const from = was.get(t.id)
+    const skipped = t.status === 'skipped' && from !== undefined && from !== 'skipped'
+    if ((from !== 'discussing' && !skipped) || t.status === 'discussing') continue
     const round = lastRound(after.rounds, t.id)
     // Its vote is still open in this snapshot, or the group's Move on above already says it.
     if (
@@ -221,5 +224,5 @@ export function boardMoves(before: BoardMoment, after: BoardMoment, extendMs: nu
   )
   if (started && was.has(started.id) && !named.has(started.id))
     said.push(`Now discussing "${started.text}".`)
-  return said.join(' ')
+  return [...new Set(said)].join(' ')
 }
