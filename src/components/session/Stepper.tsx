@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatClock } from '../../lib/time'
-import type { BoardState, Phase } from '../../lib/types'
+import type { BoardState, Phase, Topic } from '../../lib/types'
 
 const STEPS: { phase: Phase; label: string; hint: (s: BoardState) => string }[] = [
   {
@@ -23,9 +23,46 @@ const STEPS: { phase: Phase; label: string; hint: (s: BoardState) => string }[] 
 ]
 const ORDER: Phase[] = ['brainstorm', 'clarify', 'vote', 'discuss', 'wrapup', 'ended']
 
-/** 88 px phase stepper shared by every session screen. */
-export function PhaseStepper({ state, currentHint }: { state: BoardState; currentHint?: string }) {
+/**
+ * The last phase an ended session reached. The server does not keep the phase it ended from, so
+ * this is the later of the phase the tab saw before the end (`seen`) and what the board shows: a
+ * start time means Brainstorm, revealed votes mean Vote, a topic that left the queue or took time
+ * means Discuss, and a take-away means Wrap-up. A session ended from the Lobby reached none.
+ */
+export function reachedPhase(
+  state: Pick<BoardState, 'started_at' | 'votes_revealed_at'>,
+  topics: Pick<Topic, 'status' | 'time_spent_ms'>[],
+  takeaways: number,
+  seen: Phase,
+): Phase {
+  const shown: Phase =
+    takeaways > 0
+      ? 'wrapup'
+      : topics.some((t) => t.status !== 'open' || t.time_spent_ms > 0)
+        ? 'discuss'
+        : state.votes_revealed_at
+          ? 'vote'
+          : state.started_at
+            ? 'brainstorm'
+            : 'lobby'
+  return ORDER.indexOf(seen) > ORDER.indexOf(shown) ? seen : shown
+}
+
+/**
+ * 88 px phase stepper shared by every session screen. On an ended board only the steps up to
+ * `reached` are ticked, so a session ended early does not claim the phases it never ran.
+ */
+export function PhaseStepper({
+  state,
+  currentHint,
+  reached,
+}: {
+  state: BoardState
+  currentHint?: string
+  reached?: Phase
+}) {
   const current = ORDER.indexOf(state.phase)
+  const last = state.phase === 'ended' && reached ? ORDER.indexOf(reached) : current - 1
   // On a phone the steps scroll sideways: the strip then takes a tab stop so keyboard users can
   // scroll it, and the current step is brought into view.
   const nav = useRef<HTMLElement>(null)
@@ -54,7 +91,7 @@ export function PhaseStepper({ state, currentHint }: { state: BoardState; curren
     >
       <ol className="flex h-[88px] min-w-max items-center gap-3 px-4 sm:px-10">
         {STEPS.map((step, i) => {
-          const done = i < current
+          const done = i <= last
           const active = i === current
           return (
             <li

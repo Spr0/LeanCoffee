@@ -106,6 +106,8 @@ test('the frame every phase shares', async ({ browser }) => {
   }
   const home = await fran.getByRole('link', { name: 'Lean Coffee home' }).boundingBox()
   expect(home?.height).toBeGreaterThanOrEqual(44)
+  // Buttons are 15 px or larger (build prompt section 3).
+  await expect(btn(fran, 'Invite people')).toHaveCSS('font-size', '15px')
 
   // The people dialog opens on its title, at the top, by keyboard.
   await btn(fran, '2 people').focus()
@@ -194,6 +196,12 @@ test('the frame every phase shares', async ({ browser }) => {
   await expect(alert).toHaveCount(0)
   await fran.unroute(/\/rpc\/timer_pause/)
 
+  // The stepper says the clock is paused, as the ring does.
+  await btn(fran, 'Pause').click()
+  await expect(pat.locator('[aria-current="step"]')).toContainText(/\d:\d\d paused/)
+  await btn(fran, 'Resume').click()
+  await expect(pat.locator('[aria-current="step"]')).toContainText(/\d:\d\d left/)
+
   // Downloads: the pressed button keeps focus while the file is built, and says when it is ready.
   await btn(pat, 'Downloads').click()
   const downloads = pat.getByRole('dialog', { name: 'Download the results' })
@@ -213,6 +221,11 @@ test('the frame every phase shares', async ({ browser }) => {
   await btn(fran, 'Pass to Pat').click()
   await btn(fran, 'Done').click()
   await expect(pat.getByText('FACILITATOR', { exact: true })).toBeVisible({ timeout: 15_000 })
+  // Both pages say who facilitates now (WCAG 4.1.3).
+  const said = (page: Page, text: string) =>
+    expect(page.locator('p[aria-live="polite"]').filter({ hasText: text })).toHaveCount(1)
+  await said(pat, 'You are now the facilitator.')
+  await said(fran, 'Pat is now the facilitator.')
   await btn(pat, '2 people').click()
   await btn(pat, 'Manage people').click()
   await expect(pat.getByRole('dialog', { name: 'People on this board' })).toBeVisible()
@@ -224,8 +237,24 @@ test('the frame every phase shares', async ({ browser }) => {
   await expect(pat.getByRole('dialog', { name: 'People' })).toBeVisible()
   await expect(pat.getByRole('switch')).toHaveCount(0)
   expect(await pat.locator('button[aria-label^="Remove "]').count()).toBe(0)
+  await said(pat, 'Fran is now the facilitator.')
+  await said(fran, 'You are now the facilitator.')
   await btn(pat, 'Done').click()
   await btn(fran, 'Done').click()
+
+  // Losing the role while on a facilitator's control: focus goes to the page heading, not the page.
+  await btn(fran, '2 people').click()
+  await btn(fran, 'Pass facilitator role').click()
+  await fran.getByRole('radio', { name: 'Pat' }).check()
+  await btn(fran, 'Pass to Pat').click()
+  await btn(fran, 'Done').click()
+  await expect(btn(pat, 'Next topic')).toBeVisible({ timeout: 15_000 })
+  await btn(pat, 'Next topic').focus()
+  await btn(fran, '2 people').click()
+  await btn(fran, 'Take the facilitator role back').click()
+  await btn(fran, 'Done').click()
+  await expect(btn(pat, 'Next topic')).toHaveCount(0, { timeout: 15_000 })
+  await expect(pat.locator('main h1')).toBeFocused()
 
   // A board that does not load reopens on its own once, then says so with Try again.
   await pat.route(BOARD_STATE, (route) =>
@@ -266,6 +295,8 @@ test('the frame every phase shares', async ({ browser }) => {
     timeout: 25_000,
   })
   await expect(list.getByRole('listitem')).toHaveCount(1)
+  // The removed tab no longer names the session or a phase it has left.
+  await expect(pat).toHaveTitle('Lean Coffee')
 
   for (const g of guards) g.check()
 })

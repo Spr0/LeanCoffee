@@ -46,7 +46,7 @@ export function InviteButton({ ctx }: { ctx: BoardContext }) {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Invite people"
-        className="min-h-11 shrink-0 rounded-lg border-2 border-line px-3 text-[13px] font-bold whitespace-nowrap text-teal hover:bg-surface dark:hover:bg-line"
+        className="min-h-11 shrink-0 rounded-lg border-2 border-line px-3 text-[15px] font-bold whitespace-nowrap text-teal hover:bg-surface dark:hover:bg-line"
       >
         Invite
       </button>

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { BoardState, Participant, Settings } from '../lib/types'
 import { makeCtx as makeBoardCtx } from '../test/boardContext'
 import type { BoardContext } from './BoardView'
@@ -121,20 +121,50 @@ describe('Lobby', () => {
 })
 
 describe('Lobby pitch and wrap-up timers', () => {
-  it('steps the pitch timer in 15 s steps down to Off', () => {
+  it('steps the pitch timer in 15 s steps down to Off', async () => {
     const ctx = makeBoardCtx({ settings: { pitch_s: 15 } })
     render(<Lobby ctx={ctx} />)
     expect(screen.getByRole('group', { name: 'Pitch' })).toHaveTextContent('15 s')
     fireEvent.click(screen.getByRole('button', { name: 'Decrease Pitch' }))
-    expect(ctx.act).toHaveBeenLastCalledWith('update_settings', {
-      p_board: 'b1',
-      p_settings: { pitch_s: 0 },
-    })
+    await waitFor(() =>
+      expect(ctx.act).toHaveBeenLastCalledWith('update_settings', {
+        p_board: 'b1',
+        p_settings: { pitch_s: 0 },
+      }),
+    )
+    expect(screen.getByRole('group', { name: 'Pitch' })).toHaveTextContent('Off')
     fireEvent.click(screen.getByRole('button', { name: 'Increase Pitch' }))
-    expect(ctx.act).toHaveBeenLastCalledWith('update_settings', {
-      p_board: 'b1',
-      p_settings: { pitch_s: 30 },
-    })
+    await waitFor(() =>
+      expect(ctx.act).toHaveBeenLastCalledWith('update_settings', {
+        p_board: 'b1',
+        p_settings: { pitch_s: 15 },
+      }),
+    )
+  })
+
+  it('adds up quick presses before the server echoes them', async () => {
+    const ctx = makeBoardCtx()
+    render(<Lobby ctx={ctx} />)
+    const decrease = screen.getByRole('button', { name: 'Decrease Brainstorm' })
+    for (let i = 0; i < 6; i++) fireEvent.click(decrease)
+    // Shown at once, and sent in press order, each from the last value sent.
+    expect(screen.getByRole('group', { name: 'Brainstorm' })).toHaveTextContent('2:00')
+    expect(decrease).toBeDisabled()
+    await waitFor(() => expect(ctx.act).toHaveBeenCalledTimes(6))
+    expect(vi.mocked(ctx.act).mock.calls.map(([, args]) => args?.p_settings)).toEqual(
+      [270, 240, 210, 180, 150, 120].map((brainstorm_s) => ({ brainstorm_s })),
+    )
+  })
+
+  it('shows the server value again when a change fails', async () => {
+    const ctx = makeBoardCtx()
+    vi.mocked(ctx.act).mockResolvedValue(false)
+    render(<Lobby ctx={ctx} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Increase Voting' }))
+    expect(screen.getByRole('group', { name: 'Voting' })).toHaveTextContent('2:00')
+    await waitFor(() =>
+      expect(screen.getByRole('group', { name: 'Voting' })).toHaveTextContent('1:30'),
+    )
   })
 
   it('shows Off and stops at the ends of each range', () => {
@@ -145,15 +175,17 @@ describe('Lobby pitch and wrap-up timers', () => {
     expect(screen.getByRole('button', { name: 'Increase Wrap-up' })).toBeDisabled()
   })
 
-  it('steps the wrap-up timer in whole minutes down to Off', () => {
+  it('steps the wrap-up timer in whole minutes down to Off', async () => {
     const ctx = makeBoardCtx({ settings: { wrapup_s: 60 } })
     render(<Lobby ctx={ctx} />)
     expect(screen.getByRole('group', { name: 'Wrap-up' })).toHaveTextContent('1:00')
     fireEvent.click(screen.getByRole('button', { name: 'Decrease Wrap-up' }))
-    expect(ctx.act).toHaveBeenLastCalledWith('update_settings', {
-      p_board: 'b1',
-      p_settings: { wrapup_s: 0 },
-    })
+    await waitFor(() =>
+      expect(ctx.act).toHaveBeenLastCalledWith('update_settings', {
+        p_board: 'b1',
+        p_settings: { wrapup_s: 0 },
+      }),
+    )
   })
 
   it('keeps the timers read-only for participants', () => {

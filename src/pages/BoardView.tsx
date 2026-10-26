@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Header } from '../components/Header'
-import { echoError } from '../components/session/Dialog'
+import { echoError, echoStatus } from '../components/session/Dialog'
 import { InviteButton } from '../components/session/Invite'
 import { Button } from '../components/ui'
 import { navigate } from '../lib/router'
 import { AppError, rpc } from '../lib/supabase'
-import type { BoardState, Phase } from '../lib/types'
+import type { BoardState, Participant, Phase } from '../lib/types'
 import { useBoard, type UseBoard } from '../state/useBoard'
 import { usePhaseFocus } from '../state/usePhaseFocus'
 import Lobby from './Lobby'
@@ -59,14 +59,16 @@ export default function BoardView(props: {
 
 /**
  * The tab's title names the phase and the session (WCAG 2.4.2), so a screen reader or a list of
- * tabs tells one board and one step from another. It goes back to the app's name on leaving.
+ * tabs tells one board and one step from another. It goes back to the app's name on leaving, and
+ * when the person is removed, so their tab no longer names the session or a phase it has left.
  */
 function usePageTitle(state: BoardState | null) {
   const phase = state?.phase
   const name = state?.name
   useEffect(() => {
-    if (!phase) return
-    document.title = [PHASE_LABEL[phase], name, 'Lean Coffee'].filter(Boolean).join(' · ')
+    document.title = phase
+      ? [PHASE_LABEL[phase], name, 'Lean Coffee'].filter(Boolean).join(' · ')
+      : 'Lean Coffee'
   }, [phase, name])
   useEffect(
     () => () => {
@@ -74,6 +76,61 @@ function usePageTitle(state: BoardState | null) {
     },
     [],
   )
+}
+
+/**
+ * Says who facilitates when the role moves (WCAG 4.1.3): the new facilitator's page gains a full
+ * set of controls and the old one's loses them, and the header badge is the only other sign.
+ * Each change is a new line, so passing the role there and back is said both times; an open
+ * dialog repeats it.
+ */
+function useRoleNote(
+  facilitatorId: string | undefined,
+  userId: string,
+  people: Participant[],
+): { text: string; n: number } {
+  const [seen, setSeen] = useState({ id: facilitatorId, text: '', n: 0 })
+  if (facilitatorId && facilitatorId !== seen.id) {
+    const name = people.find((p) => p.user_id === facilitatorId)?.display_name
+    const text = !seen.id
+      ? ''
+      : facilitatorId === userId
+        ? 'You are now the facilitator.'
+        : name
+          ? `${name} is now the facilitator.`
+          : 'Someone else is now the facilitator.'
+    setSeen({ id: facilitatorId, text, n: seen.n + 1 })
+  }
+  useEffect(() => echoStatus(seen.text), [seen])
+  return seen
+}
+
+/**
+ * When the role is taken away while one of the facilitator's controls has focus, the control goes
+ * and focus would fall to the page itself; it moves to the page heading instead, as on a phase
+ * change. Nothing moves if focus is still somewhere, or was not on a control that went.
+ */
+function useRoleFocus(isFacilitator: boolean) {
+  const lastFocus = useRef<Element | null>(null)
+  const was = useRef(isFacilitator)
+  useEffect(() => {
+    const track = (e: FocusEvent) => {
+      lastFocus.current = e.target instanceof Element ? e.target : null
+    }
+    document.addEventListener('focusin', track)
+    return () => document.removeEventListener('focusin', track)
+  }, [])
+  useEffect(() => {
+    const lost = was.current && !isFacilitator
+    was.current = isFacilitator
+    const active = document.activeElement
+    if (!lost || (active !== null && active !== document.body)) return
+    if (!lastFocus.current || lastFocus.current.isConnected) return
+    const heading = document.querySelector<HTMLElement>('main h1')
+    if (!heading) return
+    if (!heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1')
+    heading.focus()
+  }, [isFacilitator])
 }
 
 /** The frame while the board loads, so the board fills in place instead of jumping in. */
@@ -127,7 +184,10 @@ function Board({
   const [error, setError] = useState<string | null>(notice ?? null)
   const [slow, setSlow] = useState(false)
   usePhaseFocus(board.data.state?.phase)
-  usePageTitle(board.data.state)
+  usePageTitle(board.gone ? null : board.data.state)
+  const facilitatorId = board.gone ? undefined : board.data.state?.facilitator_user_id
+  const roleNote = useRoleNote(facilitatorId, userId, board.data.participants)
+  useRoleFocus(facilitatorId === userId)
 
   const act = useCallback(
     async (fn: string, args: Record<string, unknown> = {}, options: ActOptions = {}) => {
@@ -234,7 +294,10 @@ function Board({
       </div>
       {/* Screen readers hear each phase change; the main content swaps silently otherwise. */}
       <p className="sr-only" aria-live="polite">
-        {`Now in ${PHASE_LABEL[state.phase]}`}
+        {state.phase === 'ended' ? 'The session has ended.' : `Now in ${PHASE_LABEL[state.phase]}`}
+      </p>
+      <p className="sr-only" aria-live="polite">
+        <span key={roleNote.n}>{roleNote.text}</span>
       </p>
       {state.phase === 'lobby' ? <Lobby ctx={ctx} /> : <SessionShell ctx={ctx} />}
     </div>
