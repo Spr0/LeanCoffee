@@ -130,7 +130,8 @@ test('Vote, Wrap-up and the ended board as the board', async ({ browser }) => {
   await btn(pat, 'Join session').click()
   await expect(pat.getByLabel('If votes tie')).toHaveValue('mini_vote')
   const start = btn(fran, 'Start brainstorm for 2 people')
-  await expect(start).toBeVisible({ timeout: 20_000 })
+  // A freshly started local Realtime can take a while to stream changes; see full-session.
+  await expect(start).toBeVisible({ timeout: 45_000 })
   await start.click()
 
   // The first on the agenda is near the 160-character limit: as the page heading at 44 px it

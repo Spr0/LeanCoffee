@@ -85,8 +85,8 @@ test('six people run a whole session', async ({ browser }) => {
 
   // Clarify: all topics appear; merge two and undo; pitch one.
   await expect(pat.getByText('Flaky end-to-end tests')).toBeVisible()
-  await fran.getByRole('button', { name: /Code review turnaround/ }).click()
-  await fran.getByRole('button', { name: /Flaky end-to-end tests/ }).click()
+  await fran.getByRole('button', { name: /^Code review turnaround/ }).click()
+  await fran.getByRole('button', { name: /^Flaky end-to-end tests/ }).click()
   await fran.getByRole('button', { name: 'Merge 2 selected' }).click()
   await expect(pat.getByText('+ Flaky end-to-end tests')).toBeVisible()
   await fran.getByRole('button', { name: 'Undo merge' }).click()

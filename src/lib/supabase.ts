@@ -71,6 +71,7 @@ const MESSAGES: Record<string, string> = {
   invalid_dots: 'That is not a number of dots you can give.',
   invalid_outcome: 'That is not a way to finish a topic.',
   busy: 'The server is busy and did not save that. Try again.',
+  conflict: 'The board changed at the same moment, so that was not saved. Check the board.',
   network: 'Connection problem. Your last change may not have saved.',
 }
 
@@ -84,6 +85,11 @@ export class AppError extends Error {
 
 // Postgres cancelled the statement (statement timeout): nothing was saved.
 const CANCELLED = '57014'
+// A check constraint failed. On the clock columns that means two presses raced (a press that
+// waited for the board lock measured time from before the other one started the clock); on any
+// other column the value was out of range.
+const CHECK_FAILED = '23514'
+const RACE_COLUMNS = /time_spent_ms|paused_remaining_ms/
 
 // Calls that give the same result when repeated, so a call the server cancelled is tried once
 // more: an extend vote has 15 s to count and everyone casts it at the same moment.
@@ -108,8 +114,10 @@ export async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Pr
   if (error) {
     const code = /^[a-z_]+$/.test(error.message)
       ? error.message
-      : error.code === '23514'
-        ? 'invalid_setting'
+      : error.code === CHECK_FAILED
+        ? RACE_COLUMNS.test(error.message)
+          ? 'conflict'
+          : 'invalid_setting'
         : error.code === CANCELLED
           ? 'busy'
           : 'network'

@@ -8,7 +8,7 @@ import type { BoardData } from '../../state/useBoard'
 import { boardTotals } from '../session'
 import { rpc } from '../supabase'
 import type { BoardState, Topic } from '../types'
-import { buildDocument } from './docx'
+import { buildDocument, isRtl } from './docx'
 import { serverNow } from './download'
 import { buildModel } from './model'
 import { cellText, exportFilename, xmlSafe } from './sanitize'
@@ -512,6 +512,25 @@ describe('Word document', () => {
     const core = (await zip.file('docProps/core.xml')?.async('string')) ?? ''
     expect(core).toContain('Lean Coffee')
     expect(core).toContain('Product team sync')
+  })
+
+  it('lays out right-to-left topics from the right, as the board does', async () => {
+    expect(isRtl('مرحبا بالجميع')).toBe(true)
+    expect(isRtl('  "שלום" world')).toBe(true)
+    expect(isRtl('Hello مرحبا')).toBe(false)
+    expect(isRtl('2026 🙂')).toBe(false)
+    const m = buildModel(sample(), new Date())
+    const first = m.discussed[0]
+    if (!first) throw new Error('sample has a discussed topic')
+    const arabic = 'كيف نراجع الشيفرة أسرع؟'
+    const { xml } = await documentXml({ ...m, discussed: [{ ...first, text: arabic }] })
+    const para = [...xml.matchAll(/<w:p>.*?<\/w:p>|<w:p .*?<\/w:p>/g)]
+      .map((p) => p[0])
+      .find((p) => p.includes(arabic))
+    expect(para).toContain('<w:bidi/>')
+    expect(para).toContain('<w:rtl/>')
+    // Left-to-right paragraphs are unchanged.
+    expect(xml.match(/<w:bidi\/>/g)).toHaveLength(1)
   })
 
   it('prints the topic on stage with its time so far, and what happened to the rest', async () => {

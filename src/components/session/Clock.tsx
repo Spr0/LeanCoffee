@@ -42,54 +42,13 @@ function spoken(ms: number): string {
   return `${m} minute${m === 1 ? '' : 's'} ${s % 60} seconds left`
 }
 
-/** Sidebar clock: big digits, "of 5:00", and a heavy progress bar. */
-export function ClockPanel({
-  title,
-  remaining,
-  totalMs,
-  paused,
-  note,
-}: {
-  title: string
-  remaining: number | null
-  totalMs: number
-  paused: boolean
-  note?: string
-}) {
-  const fraction = remaining === null ? 0 : Math.min(1, remaining / totalMs)
-  return (
-    <div>
-      <p className="text-[13px] font-bold tracking-[0.12em] text-muted uppercase">{title}</p>
-      <div
-        className="mt-2 flex items-baseline gap-2"
-        role="timer"
-        aria-label={remaining === null ? 'No timer' : spoken(remaining)}
-      >
-        <span className="text-[64px] leading-none font-extrabold text-teal tabular-nums">
-          {remaining === null ? '–:––' : formatClock(remaining)}
-        </span>
-        <span className="text-[15px] text-muted">of {formatClock(totalMs)}</span>
-        {paused && (
-          <span className="ml-2 rounded-md bg-teal-soft px-2 py-1 text-[13px] font-bold text-teal">
-            PAUSED
-          </span>
-        )}
-      </div>
-      <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-line" aria-hidden="true">
-        <div className="h-full rounded-full bg-teal" style={{ width: `${fraction * 100}%` }} />
-      </div>
-      {note && <p className="mt-2 text-[13px] text-muted">{note}</p>}
-      <TimerAnnouncer remaining={remaining} />
-    </div>
-  )
-}
-
 /**
  * Stage ring timer, built for Teams screen sharing: 72 px digits, a 5/100 stroke, turns orange
  * at 1:00 with a "1 min left" text label, and "Time's up" at zero. Never color alone. A clock of a
  * minute or less (a pitch, a tie-break) passes a shorter `urgentMs`, as 0:10 with "Under 10 s"
- * (the digits keep counting), so it does not look urgent from the start. The digits drop to 64 px where 72 px would cross the
- * stroke: rings under 200 px, and ten minutes or more (five characters) in rings under 260 px.
+ * (the digits keep counting), so it does not look urgent from the start. The digits drop to 64 px
+ * where 72 px would cross the stroke: rings under 200 px, and ten minutes or more (five
+ * characters) in rings under 260 px.
  * Five characters at 64 px need a 240 px ring. In forced colors (Windows High Contrast) the ring
  * takes system colors, the remaining time as the strong arc, and the digits draw no backplate
  * over the stroke.

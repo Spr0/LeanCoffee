@@ -35,6 +35,8 @@ export interface BoardState {
   planned_minutes: number
   phase_ends_at: string | null
   paused_remaining_ms: number | null
+  /** When the clock on the current topic last started; null while it is stopped. */
+  timer_started_at: string | null
   current_topic_id: string | null
   pitch_topic_id: string | null
   vote_round: number

@@ -54,7 +54,11 @@ vi.mock('../lib/supabase', () => {
         select: () => ({
           eq: () => {
             const result = answer(table)
-            return Object.assign(result, { maybeSingle: () => result })
+            const query = Object.assign(result, {
+              maybeSingle: () => result,
+              order: () => query,
+            })
+            return query
           },
         }),
       }),

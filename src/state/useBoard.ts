@@ -38,6 +38,16 @@ const KEYS: Record<Table, keyof BoardData> = {
   takeaways: 'takeaways',
 }
 const TABLES = Object.keys(KEYS) as Table[]
+/**
+ * Rows come in the order they were made, with the id breaking ties, so every browser and the Word
+ * and Excel files list actions alike (the files sort the same way).
+ */
+const MADE_AT: Partial<Record<Table, string>> = {
+  participants: 'joined_at',
+  topics: 'created_at',
+  extend_rounds: 'opened_at',
+  actions: 'created_at',
+}
 
 const EMPTY: BoardData = {
   state: null,
@@ -158,7 +168,10 @@ export function useBoard(boardId: string): UseBoard {
       // Rows of one table, or null on an error; `current` is false once a newer load has started.
       const fetchTable = async (table: Table) => {
         const current = ticket(table)
-        const { data: rows, error } = await supabase.from(table).select('*').eq('board_id', boardId)
+        let query = supabase.from(table).select('*').eq('board_id', boardId)
+        const madeAt = MADE_AT[table]
+        if (madeAt) query = query.order(madeAt)
+        const { data: rows, error } = await query.order('id')
         return { table, rows: error ? null : (rows ?? []), current }
       }
 

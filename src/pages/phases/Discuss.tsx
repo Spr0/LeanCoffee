@@ -33,16 +33,20 @@ import { useNow } from '../../state/useNow'
 import { ActionItem, DiscussedColumn, QueueColumn } from './BoardColumns'
 import {
   ACCENT_CHIP,
+  ACTION_MAX,
+  ActionCount,
   BoardFrame,
   CHIP,
   Eyebrow,
   FILL_LEFT,
   FILL_RIGHT,
+  FOCUS_TITLE,
   SessionTime,
   TimerButtons,
+  type PhaseProps,
+  UP_NEXT_CHIP,
   useLiveNote,
   useRefocus,
-  type PhaseProps,
 } from './common'
 import { DownloadsButton } from './Downloads'
 import { OwnerField, ownerName } from './OwnerField'
@@ -55,18 +59,17 @@ const CHOICES: { value: ExtendVote['choice']; label: string }[] = [
   { value: 'move_on', label: 'Move on' },
 ]
 
-/** The topic as the stage's page heading: 44 px for the Teams share. Long words and links break. */
-const FOCUS_TITLE =
-  'text-[44px] leading-[1.08] font-extrabold tracking-tight [overflow-wrap:anywhere] [text-wrap:pretty]'
 /** The stage's page heading when no topic is up next. */
 const STAGE_TITLE = 'text-[36px] leading-tight font-extrabold'
-/** Up next in the pine family, as on the To discuss card; outlined, unlike DISCUSSING NOW. */
-const UP_NEXT_CHIP =
-  'inline-block rounded-md border-2 border-teal px-2 py-0.5 text-[14px] font-extrabold tracking-[0.08em] text-teal'
 /** A stage button whose press is still on its way: it keeps focus and does nothing. */
 const BUSY = 'aria-disabled:cursor-wait aria-disabled:opacity-60'
 /** How long a pressed stage button waits for the stage to change before it works again. */
 const PRESS_MS = 8000
+/**
+ * Refusals that mean the stage changed before the press arrived, usually from the facilitator's
+ * other tab. The board already shows the change and the live line says it, so no banner.
+ */
+const STALE_PRESS = { quiet: ['wrong_phase', 'topic_unavailable', 'no_current_topic', 'conflict'] }
 
 /** What someone has typed into a topic's action form, kept when the form moves (Next topic). */
 interface Draft {
@@ -368,7 +371,7 @@ function useStagePress(act: PhaseProps['ctx']['act'], key: string, nowMs: number
       if (inFlight.current || pending) return
       inFlight.current = true
       setPending({ key, at: Date.now() })
-      void act(fn, args).then((ok) => {
+      void act(fn, args, STALE_PRESS).then((ok) => {
         if (!ok) setPending(null)
       })
     },
@@ -778,6 +781,7 @@ function ActionsFor({
     field?.setSelectionRange(field.value.length, field.value.length)
   }, [typing, topicId])
   const actions = board.data.actions.filter((a) => a.topic_id === topicId)
+  const full = board.data.actions.length >= ACTION_MAX
   const track = (field: 'text' | 'owner') => ({
     onFocus: () => {
       typing.current = { topic: topicId, field }
@@ -790,7 +794,7 @@ function ActionsFor({
   })
   async function add(e: FormEvent) {
     e.preventDefault()
-    if (!text.trim()) return
+    if (!text.trim() || full) return
     if (
       await act('add_action', {
         p_board: state.board_id,
@@ -824,10 +828,15 @@ function ActionsFor({
           people={board.data.participants}
           className="h-12 rounded-xl"
         />
-        <Button type="submit" className="h-12">
+        <Button
+          type="submit"
+          className="h-12 aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
+          aria-disabled={full || undefined}
+        >
           Add action
         </Button>
       </form>
+      <ActionCount count={board.data.actions.length} />
       {list && actions.length > 0 && (
         <ul className="mt-2 flex flex-col gap-2">
           {actions.map((a) => (

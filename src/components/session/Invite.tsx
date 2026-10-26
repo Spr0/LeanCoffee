@@ -68,7 +68,7 @@ export function InviteButton({ ctx }: { ctx: BoardContext }) {
           readOnly
           aria-label="Invite link"
           value={link}
-          className="mt-3 h-12 w-full rounded-xl border-2 border-line bg-panel px-3 text-[15px] text-muted"
+          className="mt-3 h-12 w-full rounded-xl border-2 border-line-strong bg-panel px-3 text-[15px] text-muted"
           onFocus={(e) => e.currentTarget.select()}
         />
         <div className="mt-4 flex flex-wrap justify-end gap-2">

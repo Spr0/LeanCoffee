@@ -66,7 +66,7 @@ export function PeoplePanel({ ctx, inDialog = false }: { ctx: BoardContext; inDi
       <div className="flex items-center justify-between text-[15px]">
         <span className="text-muted">Facilitator</span>
         <span className="font-bold">
-          {facilitator?.display_name ?? 'Nobody'}
+          {facilitator ? <bdi>{facilitator.display_name}</bdi> : 'Nobody'}
           {isFacilitator && ' (you)'}
           {reconnecting && <span className="font-medium text-muted"> (reconnecting)</span>}
         </span>
@@ -142,7 +142,9 @@ export function PeoplePanel({ ctx, inDialog = false }: { ctx: BoardContext; inDi
                 onChange={() => setChoice(p.user_id)}
               />
               <Avatar name={p.display_name} />
-              <span className="text-[16px] font-bold">{p.display_name}</span>
+              <span className="text-[16px] font-bold">
+                <bdi>{p.display_name}</bdi>
+              </span>
             </label>
           ))}
         </fieldset>
@@ -165,7 +167,13 @@ export function PeoplePanel({ ctx, inDialog = false }: { ctx: BoardContext; inDi
                 setDialog(null)
             }}
           >
-            {chosen ? `Pass to ${chosen.display_name}` : 'Choose someone'}
+            {chosen ? (
+              <>
+                Pass to <bdi>{chosen.display_name}</bdi>
+              </>
+            ) : (
+              'Choose someone'
+            )}
           </Button>
         </div>
       </Dialog>
@@ -191,7 +199,7 @@ export function PeoplePanel({ ctx, inDialog = false }: { ctx: BoardContext; inDi
               >
                 <Avatar name={p.display_name} />
                 <span className="min-w-0 flex-1 text-[16px] font-bold break-words">
-                  {p.display_name}
+                  <bdi>{p.display_name}</bdi>
                   {!isPresent(p.last_seen_at, now, board.offsetMs) && (
                     <span className="ml-2 font-medium text-muted">away</span>
                   )}
@@ -325,7 +333,11 @@ export function PeopleButton({ ctx }: { ctx: BoardContext }) {
     <>
       {reconnecting && (
         <span className="text-[15px] text-muted">
-          Facilitator <b className="text-ink">{facilitator?.display_name}</b> (reconnecting)
+          Facilitator{' '}
+          <b className="text-ink">
+            <bdi>{facilitator?.display_name}</bdi>
+          </b>{' '}
+          (reconnecting)
         </span>
       )}
       <p role="status" className="sr-only">
@@ -347,7 +359,7 @@ export function PeopleButton({ ctx }: { ctx: BoardContext }) {
               className="flex items-center gap-2 rounded-xl border border-line px-3 py-2 text-[15px] font-bold"
             >
               <Avatar name={p.display_name} />
-              {p.display_name}
+              <bdi>{p.display_name}</bdi>
             </li>
           ))}
         </ul>

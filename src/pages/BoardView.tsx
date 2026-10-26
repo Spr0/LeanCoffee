@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Header } from '../components/Header'
 import { echoError } from '../components/session/Dialog'
 import { InviteButton } from '../components/session/Invite'
@@ -7,6 +7,7 @@ import { navigate } from '../lib/router'
 import { AppError, rpc } from '../lib/supabase'
 import type { BoardState, Phase } from '../lib/types'
 import { useBoard, type UseBoard } from '../state/useBoard'
+import { usePhaseFocus } from '../state/usePhaseFocus'
 import Lobby from './Lobby'
 import SessionShell from './SessionShell'
 
@@ -26,8 +27,15 @@ export interface BoardContext {
   userId: string
   code: string
   isFacilitator: boolean
-  /** Runs an RPC and shows any failure in the shared error banner. Resolves false on failure. */
-  act: (fn: string, args?: Record<string, unknown>) => Promise<boolean>
+  /**
+   * Runs an RPC and shows any failure in the shared error banner. Resolves false on failure.
+   * Error codes in `quiet` are not shown: a press that lost a race to another tab, say.
+   */
+  act: (fn: string, args?: Record<string, unknown>, options?: ActOptions) => Promise<boolean>
+}
+
+export interface ActOptions {
+  quiet?: readonly string[]
 }
 
 /** How long the board may take to load before it is opened again, and then before it says so. */
@@ -50,28 +58,22 @@ export default function BoardView(props: {
 }
 
 /**
- * A phase change replaces the main content, so the control that moved the board on (Start
- * brainstorm, End brainstorm now, Skip pitches, Start discussing, Start wrap-up) goes with it. If
- * focus was in the main content and is left on the page itself, it moves to the new page heading
- * rather than to the top of the page. A phase that moves focus itself has done so first.
+ * The tab's title names the phase and the session (WCAG 2.4.2), so a screen reader or a list of
+ * tabs tells one board and one step from another. It goes back to the app's name on leaving.
  */
-function usePhaseFocus(phase: Phase | undefined) {
-  const inMain = useRef(false)
+function usePageTitle(state: BoardState | null) {
+  const phase = state?.phase
+  const name = state?.name
   useEffect(() => {
-    const track = (e: FocusEvent) => {
-      inMain.current = e.target instanceof Element && e.target.closest('main') !== null
-    }
-    document.addEventListener('focusin', track)
-    return () => document.removeEventListener('focusin', track)
-  }, [])
-  useEffect(() => {
-    const active = document.activeElement
-    if (!inMain.current || (active !== null && active !== document.body)) return
-    const heading = document.querySelector<HTMLElement>('main h1')
-    if (!heading) return
-    if (!heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1')
-    heading.focus()
-  }, [phase])
+    if (!phase) return
+    document.title = [PHASE_LABEL[phase], name, 'Lean Coffee'].filter(Boolean).join(' · ')
+  }, [phase, name])
+  useEffect(
+    () => () => {
+      document.title = 'Lean Coffee'
+    },
+    [],
+  )
 }
 
 /** The frame while the board loads, so the board fills in place instead of jumping in. */
@@ -125,17 +127,25 @@ function Board({
   const [error, setError] = useState<string | null>(notice ?? null)
   const [slow, setSlow] = useState(false)
   usePhaseFocus(board.data.state?.phase)
+  usePageTitle(board.data.state)
 
-  const act = useCallback(async (fn: string, args: Record<string, unknown> = {}) => {
-    setError(null)
-    try {
-      await rpc(fn, args)
-      return true
-    } catch (e) {
-      setError(e instanceof AppError ? e.message : 'Something went wrong. Try again.')
-      return false
-    }
-  }, [])
+  const act = useCallback(
+    async (fn: string, args: Record<string, unknown> = {}, options: ActOptions = {}) => {
+      setError(null)
+      try {
+        await rpc(fn, args)
+        return true
+      } catch (e) {
+        // A removed person sees the removal screen at once (useBoard), so no banner first.
+        const silent =
+          e instanceof AppError && (e.code === 'not_member' || options.quiet?.includes(e.code))
+        if (!silent)
+          setError(e instanceof AppError ? e.message : 'Something went wrong. Try again.')
+        return false
+      }
+    },
+    [],
+  )
 
   // An open dialog makes the banner inert, so the dialog shows the error too.
   useEffect(() => echoError(error), [error])

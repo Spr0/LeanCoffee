@@ -31,6 +31,7 @@ function makeCtx(userId: string): BoardContext {
     planned_minutes: 75,
     phase_ends_at: null,
     paused_remaining_ms: null,
+    timer_started_at: null,
     current_topic_id: null,
     pitch_topic_id: null,
     vote_round: 0,
@@ -101,7 +102,13 @@ describe('Lobby', () => {
     expect(screen.queryByRole('button', { name: /Start brainstorm/ })).toBeNull()
     expect(screen.getByRole('button', { name: 'Increase Voting' })).toBeDisabled()
     expect(screen.getByRole('switch', { name: 'Hide topics until reveal' })).toBeDisabled()
-    expect(screen.getByText('Waiting for Fran to start the session')).toBeInTheDocument()
+    // The name sits in a <bdi>, so a right-to-left name cannot reorder the sentence.
+    expect(
+      screen.getByText(
+        (_, el) =>
+          el?.tagName === 'P' && el.textContent === 'Waiting for Fran to start the session',
+      ),
+    ).toBeInTheDocument()
   })
 
   it('renders untrusted names as text, never markup', () => {

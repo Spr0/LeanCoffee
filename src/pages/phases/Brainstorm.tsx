@@ -16,17 +16,17 @@ import {
   CARD_TAG,
   FILL_LEFT,
   FILL_RIGHT,
+  type PhaseProps,
   SessionTime,
   SideColumn,
+  STAGE_TITLE,
   TimerButtons,
   useLiveNote,
-  type PhaseProps,
 } from './common'
 import { TOPIC_MAX, TopicEditor } from './TopicTools'
 
 const PER_PERSON = 5
 // The stage's page heading when it says what to do, the same size in every phase.
-const STAGE_TITLE = 'text-[32px] leading-tight font-extrabold tracking-tight'
 // Nothing is discussed yet; Discussed keeps the board's shape from the first phase on.
 const NO_VOTES = new Map<string, number>()
 

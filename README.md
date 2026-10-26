@@ -7,7 +7,7 @@ A free, realtime Lean Coffee meeting app for small teams (3 to 12 people) on a T
 - Decisions log: [`docs/decisions.md`](docs/decisions.md)
 - Security: [`SECURITY.md`](SECURITY.md)
 - Handoff report: [`docs/handoff-report.md`](docs/handoff-report.md) (gates, deviations, what was not tested, risks)
-- Handoff report: [`docs/handoff-report.md`](docs/handoff-report.md) (gates, deviations, what was not tested, risks)
+- Backlog: [`docs/backlog.md`](docs/backlog.md)
 
 ## Status
 
@@ -48,13 +48,14 @@ Never put a `service_role` or `sb_secret_` key in the repo, the browser bundle, 
 
 ## Tests
 
-| Command             | What it runs                                                      |
-| ------------------- | ----------------------------------------------------------------- |
-| `npm run lint`      | ESLint (bans `dangerouslySetInnerHTML` and `innerHTML`)           |
-| `npm run typecheck` | TypeScript strict                                                 |
-| `npm test`          | Vitest and React Testing Library                                  |
-| `npm run test:e2e`  | Playwright with axe-core (builds and serves the app)              |
-| `npm run db:test`   | pgTAP against a local Supabase stack (`npx supabase start` first) |
+| Command                         | What it runs                                                                                  |
+| ------------------------------- | --------------------------------------------------------------------------------------------- |
+| `npm run lint`                  | ESLint (bans `dangerouslySetInnerHTML` and `innerHTML`)                                       |
+| `npm run typecheck`             | TypeScript strict                                                                             |
+| `npm test`                      | Vitest and React Testing Library                                                              |
+| `npm run test:e2e`              | Playwright with axe-core (builds and serves the app)                                          |
+| `npm run db:test`               | pgTAP against a local Supabase stack (`npx supabase start` first)                             |
+| `bash scripts/db-test-local.sh` | The same pgTAP suite against a throwaway local Postgres with Supabase stubs (fast inner loop) |
 
 CI (`.github/workflows/ci.yml`) runs all of these plus `npm audit --audit-level=high` and a full-history gitleaks scan, against a throwaway local Supabase stack.
 
@@ -92,6 +93,12 @@ E2E_BASE_URL=https://<branch>--leancoffee-app.netlify.app npx playwright test e2
 ### Database changes
 
 There is no staging database (Supabase branching is a paid feature). Each migration in `supabase/migrations/` is proven in CI on a throwaway local Supabase stack (pgTAP, `plpgsql_check` and the browser suite), then applied by hand: paste the file into the Supabase SQL Editor and run it, before or together with the deploy that needs it. The remote migration history does not list every file (decision D30), so run `supabase migration repair` before ever using `supabase db push`.
+
+**Waiting to be applied to production** (in this order; each is backward compatible, and the client does not depend on any of them):
+
+1. `20261026100000_dot_budget_restack.sql`: dots stack one click at a time (D89). Until it is applied, a third dot on one topic is refused, and `e2e/dot-budget.spec.ts` fails against production.
+2. `20261026110000_scale_fixes.sql`: `clean_text` keeps joiners inside emoji and Persian words (D92).
+3. `20261026120000_stage_races.sql`: stage presses that lose a race are refused quietly, and the optional `p_topic` guard (D95). Replacing these functions drops and recreates their grants inside the file.
 
 ## Keeping the free database awake
 

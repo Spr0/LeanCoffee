@@ -52,6 +52,7 @@ export function makeCtx(
     planned_minutes: 75,
     phase_ends_at: null,
     paused_remaining_ms: null,
+    timer_started_at: null,
     current_topic_id: topics.find((t) => t.status === 'discussing')?.id ?? null,
     pitch_topic_id: null,
     vote_round: 0,

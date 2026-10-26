@@ -24,7 +24,8 @@ test('dots stack on one topic one click at a time, and move between topics', asy
   await pat.getByLabel('Name', { exact: true }).fill('Pat')
   await btn(pat, 'Join session').click()
   const start = btn(fran, 'Start brainstorm for 2 people')
-  await expect(start).toBeVisible({ timeout: 20_000 })
+  // A freshly started local Realtime can take a while to stream changes; see full-session.
+  await expect(start).toBeVisible({ timeout: 45_000 })
   await start.click()
 
   // Pat writes both topics, so Fran can vote on each.

@@ -25,12 +25,15 @@ import {
   Eyebrow,
   FILL_LEFT,
   FILL_RIGHT,
+  FOCUS_TITLE,
+  type PhaseProps,
   SessionTime,
   SideColumn,
+  STAGE_TITLE,
   TimerButtons,
+  UP_NEXT_CHIP,
   useLiveNote,
   useRefocus,
-  type PhaseProps,
 } from './common'
 import { DownloadsButton } from './Downloads'
 import { agendaTies, voteCounts, type VoteCounts } from './VoteRanking'
@@ -40,8 +43,6 @@ const PANEL = 'rounded-xl bg-surface p-4 dark:bg-ground'
 const TIED = 'rounded bg-teal-soft px-2 py-0.5 text-[13px] font-bold text-teal'
 // The stage's page heading: 32 px when it says what to do, as in every phase, and 44 px for the
 // Teams share when it is the topic in focus.
-const STAGE_TITLE = 'text-[32px] leading-tight font-extrabold tracking-tight'
-const FOCUS_TITLE = 'text-[44px] leading-[1.08] font-extrabold tracking-tight wrap-anywhere'
 
 function omit(record: Record<string, number>, key: string): Record<string, number> {
   return Object.fromEntries(Object.entries(record).filter(([k]) => k !== key))
@@ -426,7 +427,7 @@ function ResultsStage({
     <>
       <div className="flex flex-wrap gap-2">
         <span className={ACCENT_CHIP}>AGENDA</span>
-        {first && <span className={`${CHIP} font-extrabold tracking-[0.08em]`}>UP NEXT</span>}
+        {first && <span className={UP_NEXT_CHIP}>UP NEXT</span>}
       </div>
       {first ? (
         <>

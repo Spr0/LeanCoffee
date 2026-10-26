@@ -58,7 +58,8 @@ test('the frame every phase shares', async ({ browser }) => {
 
   // A phase change takes the pressed button with it; focus goes to the new page heading.
   const start = btn(fran, 'Start brainstorm for 2 people')
-  await expect(start).toBeVisible({ timeout: 20_000 })
+  // A freshly started local Realtime can take a while to stream changes; see full-session.
+  await expect(start).toBeVisible({ timeout: 45_000 })
   await start.focus()
   await fran.keyboard.press('Enter')
   await expect(fran.locator('main h1')).toBeFocused({ timeout: 15_000 })
@@ -77,9 +78,7 @@ test('the frame every phase shares', async ({ browser }) => {
   await expect(fran.locator('main h1')).toBeFocused({ timeout: 15_000 })
   await btn(fran, 'Skip pitches').click()
   for (const page of [fran, pat]) await btn(page, "I'm done").click()
-  await expect(pat.getByRole('heading', { name: 'Here is the agenda' })).toBeVisible({
-    timeout: 15_000,
-  })
+  await expect(pat.getByRole('region', { name: 'Results' })).toBeVisible({ timeout: 15_000 })
   await btn(fran, 'Start discussing').click()
   await expect(btn(fran, /^Start the .* clock$/)).toBeVisible({ timeout: 15_000 })
 

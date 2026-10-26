@@ -22,6 +22,23 @@ import { EXPORT_COLORS as C } from './palette'
 import { xmlSafe } from './sanitize'
 
 const t = (text: string) => xmlSafe(text)
+/**
+ * Right-to-left text, as the board's dir="auto" decides it: by its first letter. Word lays such a
+ * paragraph out from the right (w:bidi) and each such run right to left (w:rtl), so an Arabic or
+ * Hebrew topic reads in order and its punctuation lands where the writer put it.
+ */
+const FIRST_LETTER = /\p{L}/u
+const RTL_LETTER =
+  /[\p{Script=Hebrew}\p{Script=Arabic}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}]/u
+export function isRtl(text: string): boolean {
+  const first = FIRST_LETTER.exec(text)?.[0]
+  return first !== undefined && RTL_LETTER.test(first)
+}
+/** A run of user text, right to left when it is. */
+const userRun = (text: string, options: { bold?: boolean; color?: string } = {}) =>
+  new TextRun({ text: t(text), ...options, rightToLeft: isRtl(text) || undefined })
+/** Paragraph options for a paragraph led by user text. */
+const dirOf = (text: string) => ({ bidirectional: isRtl(text) || undefined })
 const INCH = 1440 // twips
 const CONTENT = 12240 - 2 * INCH // US Letter width minus margins, in twips
 const rule = { style: BorderStyle.SINGLE, size: 4, color: C.rule }
@@ -103,13 +120,17 @@ function actionsTable(m: ExportModel): Table {
         new Paragraph({ children: [new TextRun({ text, bold: true, color: C.onAccent })] }),
       ],
     })
-  const cell = (i: number, band: boolean, run: TextRun, center = false) =>
+  const cell = (i: number, band: boolean, run: TextRun, center = false, rtl = false) =>
     new TableCell({
       width: { size: widths[i] ?? 0, type: WidthType.DXA },
       shading: band ? fill(C.band) : undefined,
       borders: { top: rule, bottom: rule, left: rule, right: rule },
       children: [
-        new Paragraph({ alignment: center ? AlignmentType.CENTER : undefined, children: [run] }),
+        new Paragraph({
+          alignment: center ? AlignmentType.CENTER : undefined,
+          bidirectional: rtl || undefined,
+          children: [run],
+        }),
       ],
     })
   // The topic row stays with its first action at a page break.
@@ -125,7 +146,8 @@ function actionsTable(m: ExportModel): Table {
           children: [
             new Paragraph({
               keepNext: true,
-              children: [new TextRun({ text: t(topic), bold: true, color: C.accent })],
+              ...dirOf(topic),
+              children: [userRun(topic, { bold: true, color: C.accent })],
             }),
           ],
         }),
@@ -146,8 +168,8 @@ function actionsTable(m: ExportModel): Table {
           }),
           true,
         ),
-        cell(1, band, new TextRun(t(a.text))),
-        cell(2, band, new TextRun(t(a.owner))),
+        cell(1, band, userRun(a.text), false, isRtl(a.text)),
+        cell(2, band, userRun(a.owner), false, isRtl(a.owner)),
       ],
     })
   return new Table({
@@ -185,7 +207,8 @@ export function buildDocument(m: ExportModel): Document {
     new Paragraph({
       heading: HeadingLevel.TITLE,
       spacing: { after: 160 },
-      children: [new TextRun(t(m.title))],
+      ...dirOf(m.title),
+      children: [userRun(m.title)],
     }),
     factsBox(m),
     new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun('Discussed')] }),
@@ -195,8 +218,9 @@ export function buildDocument(m: ExportModel): Document {
     children.push(
       new Paragraph({
         numbering: { reference: 'discussed', level: 0 },
+        ...dirOf(d.text),
         children: [
-          new TextRun({ text: t(d.text), bold: true }),
+          userRun(d.text, { bold: true }),
           new TextRun({
             text: ` (${t(d.author)}; ${plural(d.votes, 'vote')}; ${mss(d.timeSpentMs)}; ${plural(d.extensions, 'extension')})`,
           }),
@@ -214,8 +238,9 @@ export function buildDocument(m: ExportModel): Document {
         children: [new TextRun('Being discussed')],
       }),
       new Paragraph({
+        ...dirOf(stage.text),
         children: [
-          new TextRun({ text: t(stage.text), bold: true }),
+          userRun(stage.text, { bold: true }),
           new TextRun({
             text: ` (${t(stage.author)}; ${plural(stage.votes, 'vote')}; ${mss(stage.timeSpentMs)} so far; ${plural(stage.extensions, 'extension')})`,
           }),
@@ -237,7 +262,8 @@ export function buildDocument(m: ExportModel): Document {
   for (const k of m.takeaways) {
     children.push(
       new Paragraph({
-        children: [new TextRun({ text: `${t(k.name)}: `, bold: true }), new TextRun(t(k.text))],
+        ...dirOf(k.text),
+        children: [userRun(`${k.name}: `, { bold: true }), userRun(k.text)],
       }),
     )
   }
@@ -253,7 +279,8 @@ export function buildDocument(m: ExportModel): Document {
     children.push(
       new Paragraph({
         bullet: { level: 0 },
-        children: [new TextRun(`${t(n.text)} ${notDiscussedNote(n)}`)],
+        ...dirOf(n.text),
+        children: [userRun(n.text), new TextRun(` ${notDiscussedNote(n)}`)],
       }),
     )
   }

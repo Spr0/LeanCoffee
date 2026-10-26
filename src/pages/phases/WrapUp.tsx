@@ -10,22 +10,24 @@ import { useNow } from '../../state/useNow'
 import { ActionList, DiscussedColumn } from './BoardColumns'
 import {
   ACCENT_CHIP,
+  ACTION_MAX,
+  ActionCount,
   BoardFrame,
   Eyebrow,
   FILL_LEFT,
   FILL_RIGHT,
   SessionTime,
   SideColumn,
+  STAGE_TITLE,
   TimerButtons,
+  type PhaseProps,
   useLiveNote,
   useRefocus,
-  type PhaseProps,
 } from './common'
 import { DownloadsButton } from './Downloads'
 import { OwnerField, ownerName } from './OwnerField'
 
 // The stage's page heading when it says what to do, the same size in every phase.
-const STAGE_TITLE = 'text-[32px] leading-tight font-extrabold tracking-tight'
 
 /**
  * Wrap-up as the final board: Not discussed on the left, take-aways, the downloads, End session
@@ -114,6 +116,7 @@ function WrapUpStage({
     e.preventDefault()
     if (
       newAction.trim() &&
+      board.data.actions.length < ACTION_MAX &&
       (await act('add_action', {
         p_board: state.board_id,
         p_text: newAction,
@@ -196,10 +199,15 @@ function WrapUpStage({
             people={board.data.participants}
             className="h-12 rounded-xl"
           />
-          <Button type="submit" className="h-12">
+          <Button
+            type="submit"
+            className="h-12 aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
+            aria-disabled={board.data.actions.length >= ACTION_MAX || undefined}
+          >
             Add action
           </Button>
         </form>
+        <ActionCount count={board.data.actions.length} />
       </div>
     </>
   )

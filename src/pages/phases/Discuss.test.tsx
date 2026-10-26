@@ -7,6 +7,11 @@ import { makeCtx, makeTopic } from './testBoard'
 import WrapUp from './WrapUp'
 import type { BoardState, ExtendRound, Topic, Vote } from '../../lib/types'
 
+/** A stage press does not show a refusal that only means the stage already moved on. */
+const STALE_PRESS = {
+  quiet: expect.arrayContaining(['wrong_phase', 'topic_unavailable', 'conflict']) as unknown,
+}
+
 // The clock-at-zero helpers call the server and play the chime; both are watched, not run.
 vi.mock('../../lib/retry', () => ({ callWhenDue: vi.fn() }))
 vi.mock('../../lib/chime', async (load) => ({
@@ -225,7 +230,7 @@ describe('Discuss board', () => {
     ] as const) {
       const { act, user, view } = setup('u1')
       await user.click(screen.getByRole('button', { name }))
-      expect(act).toHaveBeenLastCalledWith(fn, { p_board: 'b1', ...args })
+      expect(act).toHaveBeenLastCalledWith(fn, { p_board: 'b1', ...args }, STALE_PRESS)
       view.unmount()
     }
   })
@@ -243,7 +248,7 @@ describe('Discuss board', () => {
     const after = makeCtx('u1', board('discussed'), ctx.act, { phase_ends_at: null })
     view.rerender(<Discuss ctx={after} remaining={null} />)
     await user.click(screen.getByRole('button', { name: 'Start the 5:00 clock' }))
-    expect(act).toHaveBeenLastCalledWith('start_discussion', { p_board: 'b1' })
+    expect(act).toHaveBeenLastCalledWith('start_discussion', { p_board: 'b1' }, STALE_PRESS)
     expect(act).toHaveBeenCalledTimes(2)
   })
 
@@ -487,7 +492,7 @@ describe('Discuss extend vote', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Next up' })).toBeInTheDocument()
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
     await user.click(screen.getByRole('button', { name: 'Extend 3:00 anyway' }))
-    expect(act).toHaveBeenCalledWith('extend_topic', { p_board: 'b1' })
+    expect(act).toHaveBeenCalledWith('extend_topic', { p_board: 'b1' }, STALE_PRESS)
   })
 
   it('offers the next topic, a re-vote and wrap-up between topics', async () => {
@@ -500,7 +505,7 @@ describe('Discuss extend vote', () => {
       const stage = screen.getByRole('region', { name: 'Discussing' })
       expect(within(stage).getByText('UP NEXT')).toBeInTheDocument()
       await user.click(within(stage).getByRole('button', { name }))
-      expect(act).toHaveBeenLastCalledWith(fn, { p_board: 'b1', ...args })
+      expect(act).toHaveBeenLastCalledWith(fn, { p_board: 'b1', ...args }, STALE_PRESS)
       // The last topic's actions are added here and listed under it in Discussed.
       expect(within(stage).getByText('Actions from the last topic')).toBeInTheDocument()
       view.unmount()

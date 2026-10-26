@@ -18,7 +18,10 @@ export function usePhaseFocus(phase: Phase | undefined) {
   }, [])
   useEffect(() => {
     const active = document.activeElement
-    if (inMain.current && (active === null || active === document.body))
-      document.querySelector<HTMLElement>('main h1')?.focus()
+    if (!inMain.current || (active !== null && active !== document.body)) return
+    const heading = document.querySelector<HTMLElement>('main h1')
+    if (!heading) return
+    if (!heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1')
+    heading.focus()
   }, [phase])
 }

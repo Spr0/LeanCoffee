@@ -71,8 +71,7 @@ export function buildModel(data: BoardData, now: Date, locale?: string): ExportM
   // The same dots as the board: after a re-vote, discussed and skipped topics keep the dots that
   // ranked them, from the last earlier round they got any in.
   const totals = boardTotals(data.votes, data.topics, state.base_round)
-  // The segment clock is selected with the rest of board_state but is not in its type.
-  const segmentStart = (state as { timer_started_at?: string | null }).timer_started_at ?? null
+  const segmentStart = state.timer_started_at ?? null
   // Merged cards carry their duplicates' text so nothing written is lost.
   const merged = (id: string) => data.topics.filter((t) => t.merged_into === id)
   const list = cards(data.topics)

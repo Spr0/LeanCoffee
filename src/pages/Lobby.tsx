@@ -65,7 +65,7 @@ export default function Lobby({ ctx }: { ctx: BoardContext }) {
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') setEditingName(false)
                 }}
-                className="h-12 flex-1 rounded-xl border-2 border-line bg-panel px-3 text-[22px] font-bold"
+                className="h-12 flex-1 rounded-xl border-2 border-line-strong bg-panel px-3 text-[22px] font-bold"
                 value={nameDraft}
                 maxLength={60}
                 onChange={(e) => setNameDraft(e.target.value)}
@@ -143,7 +143,7 @@ export default function Lobby({ ctx }: { ctx: BoardContext }) {
               readOnly
               aria-label="Invite link"
               value={link}
-              className="h-12 min-w-0 flex-1 rounded-xl border-2 border-line bg-panel px-3 text-[15px] text-muted"
+              className="h-12 min-w-0 flex-1 rounded-xl border-2 border-line-strong bg-panel px-3 text-[15px] text-muted"
               onFocus={(e) => e.currentTarget.select()}
             />
             <Button onClick={() => copy('link', link)}>
@@ -183,7 +183,7 @@ export default function Lobby({ ctx }: { ctx: BoardContext }) {
                 className="flex items-center gap-2 rounded-full border border-line py-1.5 pr-4 pl-1.5 text-[15px]"
               >
                 <Avatar name={p.display_name} />
-                {p.display_name}
+                <bdi>{p.display_name}</bdi>
                 {p.user_id === userId && <span className="text-muted">(you)</span>}
               </li>
             ))}
@@ -203,7 +203,7 @@ export default function Lobby({ ctx }: { ctx: BoardContext }) {
         </h2>
         {!isFacilitator && (
           <p className="mt-1 text-[14px] text-muted">
-            Set by {facilitator?.display_name ?? 'the facilitator'}.
+            Set by {facilitator ? <bdi>{facilitator.display_name}</bdi> : 'the facilitator'}.
           </p>
         )}
         <div className="mt-4">
@@ -291,7 +291,7 @@ export default function Lobby({ ctx }: { ctx: BoardContext }) {
             </label>
             <select
               id="tie-break"
-              className="mt-2 h-11 w-full rounded-lg border-2 border-line bg-panel px-3 text-[15px] font-bold"
+              className="mt-2 h-11 w-full rounded-lg border-2 border-line-strong bg-panel px-3 text-[15px] font-bold"
               value={s.tie_break}
               disabled={!isFacilitator}
               onChange={(e) => set({ tie_break: e.target.value as Settings['tie_break'] })}
@@ -341,7 +341,7 @@ export default function Lobby({ ctx }: { ctx: BoardContext }) {
             >
               <input
                 aria-label="New passcode"
-                className="h-11 flex-1 rounded-lg border-2 border-line bg-panel px-3 text-[15px]"
+                className="h-11 flex-1 rounded-lg border-2 border-line-strong bg-panel px-3 text-[15px]"
                 value={passcodeDraft}
                 minLength={6}
                 maxLength={64}
@@ -394,7 +394,8 @@ export default function Lobby({ ctx }: { ctx: BoardContext }) {
             className="mt-6 rounded-xl bg-panel p-4 text-center text-[15px] font-bold"
             aria-live="polite"
           >
-            Waiting for {facilitator?.display_name ?? 'the facilitator'} to start the session
+            Waiting for {facilitator ? <bdi>{facilitator.display_name}</bdi> : 'the facilitator'} to
+            start the session
           </p>
         )}
       </section>

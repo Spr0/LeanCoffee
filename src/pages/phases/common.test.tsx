@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { makeCtx } from '../../test/boardContext'
-import { TimerButtons } from './common'
+import { ActionCount, TimerButtons } from './common'
 
 const running = {
   phase: 'vote' as const,
@@ -34,5 +34,24 @@ describe('TimerButtons', () => {
     expect(ctx.act).toHaveBeenLastCalledWith('timer_adjust', { p_board: 'b1', p_delta_s: -30 })
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
     expect(ctx.act).toHaveBeenLastCalledWith('timer_resume', { p_board: 'b1' })
+  })
+})
+
+describe('ActionCount', () => {
+  it('says nothing well below the limit', () => {
+    const { container } = render(<ActionCount count={49} />)
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('counts from 50 actions', () => {
+    render(<ActionCount count={55} />)
+    expect(screen.getByText('55 of 60 actions')).toBeInTheDocument()
+  })
+
+  it('says why no more can be added at 60', () => {
+    render(<ActionCount count={60} />)
+    expect(
+      screen.getByText('This board holds 60 actions, the most it can. Delete one to add another.'),
+    ).toBeInTheDocument()
   })
 })

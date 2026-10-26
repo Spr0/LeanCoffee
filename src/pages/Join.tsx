@@ -18,7 +18,7 @@ const NEXT = [
 ]
 
 const inputClass =
-  'mt-2 h-14 w-full rounded-xl border-2 border-line bg-panel px-4 text-[18px] font-bold text-ink'
+  'mt-2 h-14 w-full rounded-xl border-2 border-line-strong bg-panel px-4 text-[18px] font-bold text-ink'
 
 export default function Join({
   code,

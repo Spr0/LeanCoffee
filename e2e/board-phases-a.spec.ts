@@ -122,7 +122,8 @@ test('Brainstorm and Clarify as the board', async ({ browser }) => {
   await btn(pat, 'Join session').click()
   await expect(pat.getByText(/Waiting for Fran/)).toBeVisible()
   const start = btn(fran, 'Start brainstorm for 2 people')
-  await expect(start).toBeVisible({ timeout: 20_000 })
+  // A freshly started local Realtime can take a while to stream changes; see full-session.
+  await expect(start).toBeVisible({ timeout: 45_000 })
   await start.click()
 
   // Brainstorm, clock stopped (D64): the board is there from the start, with the clock on stage.

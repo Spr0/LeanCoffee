@@ -120,7 +120,8 @@ test('the Discuss board: progress, stage and history on one screen', async ({ br
   await btn(pat, 'Join session').click()
   await expect(pat.getByText(/Waiting for Fran/)).toBeVisible()
   const start = btn(fran, 'Start brainstorm for 2 people')
-  await expect(start).toBeVisible({ timeout: 20_000 })
+  // A freshly started local Realtime can take a while to stream changes; see full-session.
+  await expect(start).toBeVisible({ timeout: 45_000 })
   await start.click()
 
   const topics: [Page, string][] = [

@@ -27,6 +27,14 @@ export const ACCENT_CHIP =
   'inline-block rounded-md bg-teal-soft px-2.5 py-1 text-[14px] font-extrabold tracking-[0.08em] text-teal'
 /** A card's label above its text, as UP NEXT in To discuss. */
 export const CARD_TAG = 'text-[13px] font-extrabold tracking-[0.1em] text-teal'
+/** UP NEXT on the stage, in the pine family as on the To discuss card; outlined, unlike ACCENT_CHIP. */
+export const UP_NEXT_CHIP =
+  'inline-block rounded-md border-2 border-teal px-2 py-0.5 text-[14px] font-extrabold tracking-[0.08em] text-teal'
+/** A topic as the stage's page heading: 44 px for the Teams share. Long words and links break. */
+export const FOCUS_TITLE =
+  'text-[44px] leading-[1.08] font-extrabold tracking-tight [overflow-wrap:anywhere] [text-wrap:pretty]'
+/** The stage's page heading when it gives an instruction rather than a topic. */
+export const STAGE_TITLE = 'text-[32px] leading-tight font-extrabold tracking-tight'
 
 // Side columns sit on the page ground with a 2 px ring in dark mode, where --surface is --panel.
 const COLUMN = 'min-w-0 rounded-2xl bg-surface p-3 dark:bg-ground dark:ring-2 dark:ring-line'
@@ -255,5 +263,23 @@ export function Check() {
     >
       <path d="M5 12l5 5L20 7" />
     </svg>
+  )
+}
+
+/** The server keeps at most this many actions on a board (add_action raises action_limit). */
+export const ACTION_MAX = 60
+
+/**
+ * How many actions the board holds, from 50 on, under an action form; at the limit it says why
+ * Add action does nothing. The form's button stays focusable (aria-disabled) at the limit.
+ */
+export function ActionCount({ count }: { count: number }) {
+  if (count < ACTION_MAX - 10) return null
+  return (
+    <p className="mt-1 text-[13px] text-muted">
+      {count >= ACTION_MAX
+        ? `This board holds ${ACTION_MAX} actions, the most it can. Delete one to add another.`
+        : `${count} of ${ACTION_MAX} actions`}
+    </p>
   )
 }

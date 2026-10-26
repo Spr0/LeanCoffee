@@ -17,7 +17,7 @@ const STEPS = [
 const LENGTHS = [30, 45, 60, 75]
 
 const inputClass =
-  'mt-2 h-[52px] w-full rounded-xl border-2 border-line bg-panel px-4 text-[16px] text-ink placeholder:text-muted'
+  'mt-2 h-[52px] w-full rounded-xl border-2 border-line-strong bg-panel px-4 text-[16px] text-ink placeholder:text-muted'
 
 export default function Home() {
   const [name, setName] = useState('')
@@ -158,7 +158,7 @@ export default function Home() {
               <div className="mt-3 flex gap-2">
                 <input
                   id="room-code"
-                  className="h-[52px] min-w-0 flex-1 rounded-xl border-2 border-line bg-panel px-4 text-[17px] font-medium tracking-[0.08em] uppercase placeholder:text-muted"
+                  className="h-[52px] min-w-0 flex-1 rounded-xl border-2 border-line-strong bg-panel px-4 text-[17px] font-medium tracking-[0.08em] uppercase placeholder:text-muted"
                   value={code}
                   onChange={(e) => {
                     setCode(e.target.value)

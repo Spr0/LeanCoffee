@@ -17,12 +17,14 @@ import {
   Eyebrow,
   FILL_LEFT,
   FILL_RIGHT,
+  FOCUS_TITLE,
+  type PhaseProps,
   SessionTime,
   SideColumn,
+  STAGE_TITLE,
   TimerButtons,
   useLiveNote,
   useRefocus,
-  type PhaseProps,
 } from './common'
 import { DeleteTopicDialog, TopicEditor } from './TopicTools'
 
@@ -32,8 +34,6 @@ const suggestDots = (topics: number) => Math.min(5, Math.max(1, Math.round(topic
 const NO_VOTES = new Map<string, number>()
 // The stage's page heading: 32 px when it says what to do, as in every phase, and 44 px for the
 // Teams share when it is the topic in focus.
-const STAGE_TITLE = 'text-[32px] leading-tight font-extrabold tracking-tight'
-const FOCUS_TITLE = 'text-[44px] leading-[1.08] font-extrabold tracking-tight wrap-anywhere'
 
 /**
  * Clarify as the board: every card face up in To discuss, merged cards stacked under the card

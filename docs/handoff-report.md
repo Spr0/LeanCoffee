@@ -1,6 +1,6 @@
 # Handoff report: Lean Coffee
 
-Date: 2026-10-25. Live at https://leancoffee-app.netlify.app (Netlify, deployed from `main` of `Spr0/LeanCoffee`). Database: Supabase project `dzvfedktsxomnzokeqap` (free tier).
+Date: 2026-10-25, updated 2026-10-26 for the board on every phase and the wave 1 fixes. Live at https://leancoffee-app.netlify.app (Netlify, deployed from `main` of `Spr0/LeanCoffee`). Database: Supabase project `dzvfedktsxomnzokeqap` (free tier).
 
 ## What was built
 
@@ -36,6 +36,21 @@ After the first production deploy, five independent auditors checked the live si
 - **Operations and docs:** the key-rotation steps would have broken the backup keep-alive; the README said a paused project can be restored for a year (Supabase now says 90 days); stale and overstated statements in `SECURITY.md`; Lighthouse's own dependencies had high advisories; a missing file under `/assets/` returned the app instead of a 404,. Hashed files stay on Netlify's default revalidation, because a year-long cache rule would also stick to that 404.
 
 Your changes during launch are recorded as decisions D63 to D66 and D72 to D74.
+
+## Board on every phase and wave 1 fixes (2026-10-26)
+
+Every phase after the Lobby is now the board you chose (option 3): To discuss on the left, the stage in the middle, Discussed on the right (D75 to D88). Eight testers then worked through it on a preview and two reviewers read the code; their real findings are fixed and recorded as D89 to D102. The ones you would notice:
+
+- **The board no longer contradicts itself.** After Next topic every browser used to show the topic on stage and in a column at once for up to 3.7 s. The board now loads the state with the tables it affects and shows them together, and the stage holds the last consistent board for up to 3 s (D90, D93).
+- **A double-click does one thing.** A second press on Next topic used to send a topic nobody saw to Discussed. Presses that lose a race to another tab show no red error (D93, D94). Two facilitator tabs pressing within a second need the new server guard (D95) plus a small client change after it is applied (backlog).
+- **Dots stack.** A third dot on one topic was refused while the stage said "1 left" (D89, needs its migration).
+- **Recovery.** A dropped connection catches up at once, a failed load retries, and a stuck board reopens and then offers Try again (D91).
+- **Accessibility and the Teams share.** Dialogs open on their title and ask before removing someone; drafts and focus survive Next topic; every phase keeps its main controls on a 1280 x 720 share with a 160-character topic; Windows High Contrast keeps the ring and buttons visible; input borders meet 3:1; the tab title names the phase (D93, D96 to D99, D102).
+- **Files.** The topic on stage, skipped and partly discussed topics, the board's order, actions grouped under their topic, exact times in Excel and right-to-left text in Word (D100, D101).
+
+**Before deploying,** apply the three new migrations in the order the README lists (`20261026100000`, `20261026110000`, `20261026120000`). The client does not depend on them, but dot stacking stays broken until the first is applied.
+
+**Not covered by this round:** the two-tab double press (above); a removed person who does nothing still waits up to 20 s for the removal screen; the Realtime reconnect after a real 30 s network drop was unit-tested, not repeated in a browser; the request savings per change were counted from the code, not measured; Word's right-to-left layout and High Contrast were checked in generated XML and Chromium's emulation, not in Word or Windows. Five smaller items are in [`docs/backlog.md`](backlog.md).
 
 ## Deviations from the mockups
 
