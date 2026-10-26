@@ -38,7 +38,8 @@ test('skip and bring back, edit and delete, downloads, owners and the move-on ov
   await pat.getByRole('button', { name: 'Join session' }).click()
   await expect(pat.getByText(/Waiting for Fran/)).toBeVisible()
   const start = fran.getByRole('button', { name: 'Start brainstorm for 2 people' })
-  await expect(start).toBeVisible({ timeout: 20_000 })
+  // A freshly started local Realtime can take a while to stream changes; see full-session.
+  await expect(start).toBeVisible({ timeout: 45_000 })
   await start.click()
 
   // Topics can be written while the brainstorm clock is still stopped (D64).
@@ -52,7 +53,7 @@ test('skip and bring back, edit and delete, downloads, owners and the move-on ov
   await fran.getByRole('button', { name: 'Reveal results now' }).click()
 
   // Downloads appear for everyone once the votes are revealed (F24), in the toolbar as in Discuss.
-  await expect(pat.getByRole('heading', { name: 'Here is the agenda' })).toBeVisible()
+  await expect(pat.getByRole('region', { name: 'Results' })).toBeVisible()
   for (const page of [fran, pat]) {
     await page.getByRole('button', { name: 'Downloads', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Download the results' })
