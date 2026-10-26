@@ -283,12 +283,13 @@ test('Vote, Wrap-up and the ended board as the board', async ({ browser }) => {
   await phone(fran, 'results-facilitator', ['Results', 'To discuss', 'Discussed'])
 
   // A one-dot vote among the tied topics, on the same cards; the pressed button has gone, so
-  // focus moves to the stage heading.
-  await btn(fran, 'Quick vote on 4 tied at 1').click()
+  // focus moves to the stage heading. A double press starts it once, with no error banner.
+  await btn(fran, 'Quick vote on 4 tied at 1').dblclick()
   await expect(fran.getByRole('heading', { level: 1 })).toHaveText(
     'Tie-break: one dot for the topic you most want first',
   )
   await expect(fran.getByRole('heading', { level: 1 })).toBeFocused()
+  await expect(fran.getByRole('alert')).toHaveCount(0)
   await btn(fran, 'Pause').click()
   for (const page of [fran, pat]) {
     await expect(region(page, 'Voting')).toContainText('TIE-BREAK')
@@ -374,7 +375,9 @@ test('Vote, Wrap-up and the ended board as the board', async ({ browser }) => {
   }
   await expect(btn(pat, 'End session')).toHaveCount(0)
   await expect(btn(pat, 'Pause')).toHaveCount(0)
-  await expect(region(fran, 'Wrap-up').getByRole('button', { name: 'Add 1 minute' })).toBeVisible()
+  // The clock's buttons are in the toolbar, so the shared take-aways come up the share.
+  await expect(btn(fran, 'Add 1 minute')).toBeVisible()
+  await expect(region(fran, 'Wrap-up').getByRole('button', { name: 'Add 1 minute' })).toHaveCount(0)
   await pat.getByLabel('Your take-away').fill('A checklist beats a buddy system for week one.')
   await btn(pat, 'Share').click()
   await btn(fran, 'Pass').click()
@@ -404,6 +407,12 @@ test('Vote, Wrap-up and the ended board as the board', async ({ browser }) => {
   }
   // Before the shared take-aways, so a long list cannot push it off the share.
   await expect(btn(fran, 'End session')).toBeInViewport({ ratio: 1 })
+  // The group can read what is being collected on the share.
+  await expect(
+    region(fran, 'Wrap-up')
+      .getByRole('listitem')
+      .filter({ hasText: 'A checklist beats a buddy system for week one.' }),
+  ).toBeInViewport({ ratio: 1 })
 
   // The files use the board's dots: after the re-vote the discussed topic keeps its 2.
   const [xlsx] = await Promise.all([
@@ -424,11 +433,17 @@ test('Vote, Wrap-up and the ended board as the board', async ({ browser }) => {
   await phone(fran, 'wrap-up-facilitator', ['Wrap-up', 'Not discussed', 'Discussed'])
   await phone(pat, 'wrap-up-participant', ['Wrap-up', 'Not discussed', 'Discussed'])
 
-  // End session: the same board, read-only, with the downloads (spec F25, D61).
+  // End session asks first, as in every other phase, and says who has not shared yet. Then the
+  // same board, read-only, with the downloads (spec F25, D61).
+  await fran.getByLabel('Your take-away').fill('Not sent')
   await btn(fran, 'End session').click()
+  const confirmEnd = fran.getByRole('dialog', { name: 'End the session now?' })
+  await expect(confirmEnd).toContainText('Your take-away is not shared yet.')
+  await confirmEnd.getByRole('button', { name: 'End session now' }).dblclick()
   await expect(
     fran.getByRole('heading', { level: 1, name: 'This session has ended' }),
   ).toBeFocused()
+  await expect(fran.getByRole('alert')).toHaveCount(0)
   for (const page of [fran, pat]) {
     await expect(
       page.getByRole('heading', { level: 1, name: 'This session has ended' }),

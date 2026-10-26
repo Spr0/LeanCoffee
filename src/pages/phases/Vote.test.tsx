@@ -15,6 +15,8 @@ afterEach(() => {
 
 const ends = () => new Date(Date.now() + 60_000).toISOString()
 const SETTINGS = makeCtx('u1', [], vi.fn()).state.settings
+// Refusals that only mean the vote already moved on (a double press, another browser) are quiet.
+const QUIET = { quiet: ['voting_closed', 'wrong_phase'] }
 
 // Fran (u1) facilitates and Pat (u2) takes part; Sam, who has left, wrote all but Fran's topic.
 const sam = (t: Topic): Topic => ({ ...t, author_user_id: 'u3', author_name: 'Sam' })
@@ -179,7 +181,7 @@ describe('Vote board while voting', () => {
     expect(act.mock.calls.map(([fn]) => fn)).toEqual(['cast_dots'])
     await flush(async () => answer.save(true))
     expect(act.mock.calls.map(([fn]) => fn)).toEqual(['cast_dots', 'finish_voting'])
-    expect(act).toHaveBeenLastCalledWith('finish_voting', { p_board: 'b1', p_done: true })
+    expect(act).toHaveBeenLastCalledWith('finish_voting', { p_board: 'b1', p_done: true }, QUIET)
   })
 
   it('waits for a dot still being sent before the facilitator reveals', async () => {
@@ -189,8 +191,24 @@ describe('Vote board while voting', () => {
     await user.click(screen.getByRole('button', { name: 'Reveal results now' }))
     expect(act).not.toHaveBeenCalledWith('reveal_votes', expect.anything())
     await flush(async () => answer.save(true))
-    expect(act).toHaveBeenLastCalledWith('reveal_votes', { p_board: 'b1' })
+    expect(act).toHaveBeenLastCalledWith('reveal_votes', { p_board: 'b1' }, QUIET)
     expect(screen.getByRole('button', { name: 'Add 30 seconds' })).toBeInTheDocument()
+  })
+
+  it('sends one reveal for a double press, while the first is on its way', async () => {
+    const { act, user } = setup('u1')
+    act.mockImplementation(() => new Promise<boolean>(() => {}))
+    await user.dblClick(screen.getByRole('button', { name: 'Reveal results now' }))
+    await user.click(screen.getByRole('button', { name: 'Reveal results now' }))
+    expect(act.mock.calls.filter(([fn]) => fn === 'reveal_votes')).toHaveLength(1)
+  })
+
+  it('marks used dots for forced colors, where the fill is dropped', () => {
+    setup('u2', {}, [dot('t1', 'u2', 2)])
+    const used = within(screen.getByRole('img', { name: '2 of 3 dots used' })).getAllByText(
+      (_, el) => !!el?.className.includes('forced-colors:bg-[CanvasText]'),
+    )
+    expect(used).toHaveLength(2)
   })
 
   it("undoes I'm done", async () => {
@@ -198,7 +216,7 @@ describe('Vote board while voting', () => {
     const done = screen.getByRole('button', { name: "I'm done (undo)" })
     expect(done).toHaveAttribute('aria-pressed', 'true')
     await user.click(done)
-    expect(act).toHaveBeenCalledWith('finish_voting', { p_board: 'b1', p_done: false })
+    expect(act).toHaveBeenCalledWith('finish_voting', { p_board: 'b1', p_done: false }, QUIET)
   })
 
   it('asks the server to reveal when the clock reaches zero', () => {
@@ -305,8 +323,23 @@ describe('Vote board after the reveal', () => {
       RESULTS,
     )
     await user.click(screen.getByRole('button', { name: 'Break ties at random' }))
-    expect(act).toHaveBeenCalledWith('break_ties_random', { p_board: 'b1' })
+    expect(act).toHaveBeenCalledWith('break_ties_random', { p_board: 'b1' }, QUIET)
     expect(said()).toContain('Ties broken at random.')
+    // The draw is settled on screen, and a second one is a deliberate choice.
+    expect(screen.getByRole('region', { name: 'Results' })).toHaveTextContent(
+      'Ties broken at random. Use the arrows to adjust, or draw again.',
+    )
+    await user.click(screen.getByRole('button', { name: 'Draw again' }))
+    expect(act.mock.calls.filter(([fn]) => fn === 'break_ties_random')).toHaveLength(2)
+  })
+
+  it('says when the facilitator has moved topics out of dot order', () => {
+    const list = topics()
+    const moved = [1, 0, 2, 3].map((i, n) => ({ ...list[i], sort_order: n + 1 }) as Topic)
+    setup('u2', REVEALED, RESULTS, moved)
+    expect(screen.getByRole('region', { name: 'Results' })).toHaveTextContent(
+      'To discuss is the agenda. The facilitator has moved topics out of dot order.',
+    )
   })
 
   it('runs a one-dot vote among tied topics when that is the setting', async () => {
@@ -316,7 +349,11 @@ describe('Vote board after the reveal', () => {
       RESULTS,
     )
     await user.click(screen.getByRole('button', { name: 'Quick vote on 2 tied at 2' }))
-    expect(act).toHaveBeenCalledWith('start_tie_vote', { p_board: 'b1', p_topics: ['t2', 't3'] })
+    expect(act).toHaveBeenCalledWith(
+      'start_tie_vote',
+      { p_board: 'b1', p_topics: ['t2', 't3'] },
+      QUIET,
+    )
   })
 
   it('counts tie-break dots after the main total', () => {
@@ -324,6 +361,16 @@ describe('Vote board after the reveal', () => {
     expect(card('AI tools')).toHaveTextContent('Sam · 2 votes + 1 in the tie-break')
     // Main and tie-break totals now differ, so nothing is tied.
     expect(column()).not.toHaveTextContent('TIED')
+  })
+
+  it('names the tie-break dots on the stage as on the card', () => {
+    const list = topics()
+    const order = [2, 0, 1, 3].map((i, n) => ({ ...list[i], sort_order: n + 1 }) as Topic)
+    const votes = [dot('t1', 'u1', 2), ...RESULTS.slice(1), dot('t3', 'u1', 1, 1)]
+    setup('u2', { ...REVEALED, vote_round: 1 }, votes, order)
+    expect(screen.getByRole('region', { name: 'Results' })).toHaveTextContent(
+      'Raised by Sam · 2 votes + 1 in the tie-break',
+    )
   })
 })
 
@@ -348,6 +395,14 @@ describe('Vote board in a tie-break round', () => {
     ).toEqual(['Add a dot to "Async updates"', 'Add a dot to "AI tools"'])
     // A short clock turns urgent at 0:10, not from the start.
     expect(screen.getByRole('timer')).toHaveTextContent('1:00of 1:00')
+  })
+
+  it('keeps TIED on the other tie group while one group votes', () => {
+    // Onboarding and Fran's topic tie at 0; Async updates and AI tools at 2 are being voted on.
+    setup('u1', TIE, [dot('t2', 'u1', 2), dot('t3', 'u2', 2)])
+    expect(card('Onboarding')).toHaveTextContent('TIED')
+    expect(card('Fran wrote this')).toHaveTextContent('TIED')
+    expect(card('AI tools')).toHaveTextContent('TIED')
   })
 })
 
@@ -379,6 +434,14 @@ describe('Vote board in a re-vote', () => {
 })
 
 describe('Vote board announcements and focus', () => {
+  it('starts To discuss at its top when the votes are revealed', () => {
+    const { rerender } = setup('u2')
+    column().scrollTop = 300
+    expect(column().scrollTop).toBe(300)
+    rerender(REVEALED, RESULTS)
+    expect(column().scrollTop).toBe(0)
+  })
+
   it('says once that voting closed, and moves focus from "I\'m done" to the heading', async () => {
     const { rerender, user } = setup('u2')
     await user.click(screen.getByRole('button', { name: "I'm done" }))

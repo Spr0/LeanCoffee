@@ -49,6 +49,31 @@ describe('Brainstorm clock (decision D64)', () => {
     expect(screen.getByRole('button', { name: 'Remove 1 minute' })).toBeEnabled()
   })
 
+  it('sizes the ring from the clock as shown: 240 px at 10:00 or more, 200 px under it', () => {
+    const ten = { phase: 'brainstorm' as const, paused_remaining_ms: 600_000 }
+    const { rerender } = render(
+      <Brainstorm
+        ctx={makeCtx({ state: ten, settings: { brainstorm_s: 600 } })}
+        remaining={600_000}
+      />,
+    )
+    expect(screen.getByRole('timer')).toHaveStyle({ width: '240px' })
+    // The box gives up a row while the big ring is up, so Add topic stays on a 720 px share.
+    expect(screen.getByRole('textbox', { name: 'New topic' })).toHaveAttribute('rows', '1')
+    const later = {
+      phase: 'brainstorm' as const,
+      phase_ends_at: new Date(Date.now() + 586_000).toISOString(),
+    }
+    rerender(
+      <Brainstorm
+        ctx={makeCtx({ state: later, settings: { brainstorm_s: 600 } })}
+        remaining={586_000}
+      />,
+    )
+    expect(screen.getByRole('timer')).toHaveStyle({ width: '200px' })
+    expect(screen.getByRole('textbox', { name: 'New topic' })).toHaveAttribute('rows', '2')
+  })
+
   it('treats a clock paused part way as paused, not unstarted', () => {
     const paused = { phase: 'brainstorm' as const, paused_remaining_ms: 120_000 }
     render(<Brainstorm ctx={makeCtx({ state: paused })} remaining={120_000} />)
@@ -161,6 +186,18 @@ describe('Brainstorm as the board', () => {
     expect(ctx.act).toHaveBeenCalledWith('add_topic', { p_board: 'b1', p_text: 'Async updates' })
     await waitFor(() => expect(liveLine()).toHaveTextContent('Added "Async updates". 3 of 5 used.'))
     expect(box).toHaveValue('')
+  })
+
+  it('counts a topic still on its way when a second one is added at once', async () => {
+    const ctx = makeCtx({ userId: 'u2', state: running, topics: mine })
+    render(<Brainstorm ctx={ctx} remaining={200_000} />)
+    const box = screen.getByRole('textbox', { name: 'New topic' })
+    fireEvent.change(box, { target: { value: 'First' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    fireEvent.change(box, { target: { value: 'Second' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    // The list has not reloaded with the first one, but the count said out loud includes it.
+    await waitFor(() => expect(liveLine()).toHaveTextContent('Added "Second". 4 of 5 used.'))
   })
 
   it('stops at five topics', () => {

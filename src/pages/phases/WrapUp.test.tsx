@@ -113,6 +113,28 @@ describe('Wrap-up board', () => {
     expect(left).toHaveTextContent('These stay in the Word and Excel files')
   })
 
+  it('says a topic was partly discussed, or skipped after a while, as the files do', () => {
+    const list = topics().map((t) =>
+      t.id === 't3'
+        ? { ...t, time_spent_ms: 7_000 }
+        : t.id === 't4'
+          ? { ...t, time_spent_ms: 5_000 }
+          : t,
+    )
+    const ctx = makeCtx('u2', list, vi.fn(), { phase: 'wrapup' })
+    render(<WrapUp ctx={ctx} remaining={null} />)
+    const left = screen.getByRole('region', { name: 'Not discussed' })
+    expect(left).toHaveTextContent('Scope creepPat · 0 votes · partly discussed, 0:07')
+    expect(left).toHaveTextContent('Decision logPat · 0 votes · skipped after 0:05')
+  })
+
+  it('says no topics were added on a board without any', () => {
+    render(<WrapUp ctx={makeCtx('u2', [], vi.fn(), { phase: 'ended' })} remaining={null} />)
+    expect(screen.getByRole('region', { name: 'Not discussed' })).toHaveTextContent(
+      'No topics were added.',
+    )
+  })
+
   it('shows every discussed topic with its actions, and new actions under Other actions', () => {
     setup('u2')
     const right = screen.getByRole('region', { name: 'Discussed' })
@@ -145,6 +167,49 @@ describe('Wrap-up board', () => {
     })
   })
 
+  it('says what to do when a take-away or an action is only spaces', async () => {
+    const { act, user } = setup('u2')
+    const box = screen.getByLabelText('Your take-away')
+    await user.type(box, '   ')
+    await user.click(screen.getByRole('button', { name: 'Share' }))
+    expect(box).toHaveValue('')
+    expect(box).toHaveFocus()
+    expect(said()).toContain('Write a take-away first, or press Pass.')
+    const field = screen.getByLabelText('New action')
+    await user.type(field, '  ')
+    await user.click(screen.getByRole('button', { name: 'Add action' }))
+    expect(field).toHaveValue('')
+    expect(field).toHaveFocus()
+    expect(said()).toContain('Write an action first.')
+    expect(act).not.toHaveBeenCalled()
+  })
+
+  it('counts a take-away from someone removed after sharing, so it never says 2 of 1', () => {
+    const ctx = makeCtx('u1', topics(), vi.fn(), { phase: 'wrapup' })
+    ctx.board.data.participants = ctx.board.data.participants.filter((p) => p.user_id === 'u1')
+    ctx.board.data.takeaways = [
+      ...TAKEAWAYS,
+      {
+        id: 'k2',
+        board_id: 'b1',
+        user_id: 'u2',
+        author_name: 'Pat',
+        text: 'Checklists',
+        passed: false,
+      },
+      {
+        id: 'k3',
+        board_id: 'b1',
+        user_id: 'u3',
+        author_name: 'Quinn',
+        text: 'Docs',
+        passed: false,
+      },
+    ]
+    render(<WrapUp ctx={ctx} remaining={null} />)
+    expect(screen.getByText('2 of 3 shared')).toBeInTheDocument()
+  })
+
   it('adds a new action and says where it went', async () => {
     const { act, user } = setup('u2')
     await user.type(screen.getByLabelText('New action'), 'Send the notes')
@@ -163,15 +228,52 @@ describe('Wrap-up board', () => {
     expect(stage).toHaveTextContent(/^WRAPPING UP/)
     // The ring every other phase uses, so it turns orange with "1 min left" too.
     expect(within(stage).getByRole('timer')).toHaveTextContent('4:00of 5:00')
-    for (const name of ['Pause', 'Remove 1 minute', 'Add 1 minute'])
-      expect(within(stage).getByRole('button', { name })).toBeInTheDocument()
+    // In the toolbar, so the shared take-aways come up the share.
+    for (const name of ['Pause', 'Remove 1 minute', 'Add 1 minute']) {
+      expect(within(stage).queryByRole('button', { name })).toBeNull()
+      expect(screen.getByRole('button', { name })).toBeInTheDocument()
+    }
+    // Ending cannot be undone, so it asks first, as in every other phase.
     await user.click(screen.getByRole('button', { name: 'End session' }))
-    expect(act).toHaveBeenCalledWith('end_session', { p_board: 'b1' })
+    expect(act).not.toHaveBeenCalledWith('end_session', expect.anything(), expect.anything())
+    const dialog = screen.getByRole('dialog', { name: 'End the session now?' })
+    await user.click(within(dialog).getByRole('button', { name: 'End session now' }))
+    expect(act).toHaveBeenCalledWith(
+      'end_session',
+      { p_board: 'b1' },
+      { quiet: ['invalid_phase_order'] },
+    )
     await user.click(screen.getByRole('button', { name: 'Download Word file' }))
     expect(download).toHaveBeenCalledWith(
       'docx',
       expect.objectContaining({ topics: expect.any(Array) }),
     )
+  })
+
+  it('warns before ending about who has not shared and what you have not sent', async () => {
+    const { act, user } = setup('u1')
+    await user.type(screen.getByLabelText('Your take-away'), 'Half a thought')
+    await user.type(screen.getByLabelText('New action'), 'Half an action')
+    await user.click(screen.getByRole('button', { name: 'End session' }))
+    const dialog = screen.getByRole('dialog', { name: 'End the session now?' })
+    // Fran passed; Pat has not shared or passed.
+    expect(dialog).toHaveTextContent(
+      '1 person has not shared a take-away or passed yet. Anything they are still typing is lost.',
+    )
+    expect(dialog).toHaveTextContent(
+      'Your take-away is not shared yet. Your new action is not added yet.',
+    )
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(act).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Your take-away')).toHaveValue('Half a thought')
+  })
+
+  it('ends once for a double press on End session now', async () => {
+    const { act, user } = setup('u1')
+    act.mockImplementation(() => new Promise<boolean>(() => {}))
+    await user.click(screen.getByRole('button', { name: 'End session' }))
+    await user.dblClick(screen.getByRole('button', { name: 'End session now' }))
+    expect(act.mock.calls.filter(([fn]) => fn === 'end_session')).toHaveLength(1)
   })
 
   it('puts the downloads and End session before new actions, and Downloads in the toolbar', () => {
@@ -277,6 +379,7 @@ describe('Ended board', () => {
   it('moves focus to the heading when End session takes its button away', async () => {
     const { rerender, user } = setup('u1')
     await user.click(screen.getByRole('button', { name: 'End session' }))
+    await user.click(screen.getByRole('button', { name: 'End session now' }))
     rerender(ENDED)
     expect(screen.getByRole('heading', { level: 1, name: 'This session has ended' })).toHaveFocus()
   })

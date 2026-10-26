@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type RefObject } from 'react'
+import { useEffect, useId, useRef, useState, type RefObject } from 'react'
 import { RingTimer } from '../../components/session/Clock'
 import { PeopleButton } from '../../components/session/People'
 import { Button } from '../../components/ui'
@@ -41,6 +41,11 @@ import { agendaTies, voteCounts, type VoteCounts } from './VoteRanking'
 // A panel inside the stage. In dark mode --surface equals --panel, so it sits on the ground.
 const PANEL = 'rounded-xl bg-surface p-4 dark:bg-ground'
 const TIED = 'rounded bg-teal-soft px-2 py-0.5 text-[13px] font-bold text-teal'
+/**
+ * Refusals that only mean the vote has already moved on: the second half of a double press, or
+ * another browser revealing first. The board already shows what happened, so no red banner.
+ */
+const MOVED_ON = { quiet: ['voting_closed', 'wrong_phase'] }
 // The stage's page heading: 32 px when it says what to do, as in every phase, and 44 px for the
 // Teams share when it is the topic in focus.
 
@@ -64,7 +69,8 @@ function Dots({
       {Array.from({ length: total }, (_, i) => (
         <span
           key={i}
-          className={`${size} rounded-full border-2 border-teal ${i < filled ? 'bg-teal' : ''}`}
+          // Forced colors drop the fill, so a used dot takes the text color there.
+          className={`${size} rounded-full border-2 border-teal ${i < filled ? 'bg-teal forced-colors:bg-[CanvasText]' : ''}`}
         />
       ))}
     </span>
@@ -104,10 +110,13 @@ export default function Vote({ ctx, remaining }: PhaseProps) {
       : open
   // Nothing about the current round's counts is shown before the reveal, as none is returned.
   const counts = voteCounts(votes, state)
-  const groups = revealed && counts ? agendaTies(open, counts) : []
-  const tied = new Set(
-    revealed ? groups.flat().map((t) => t.id) : tieRound ? state.tie_topic_ids : [],
-  )
+  // Counts show once the main round is revealed, so in a tie-break round the other tie groups
+  // keep their TIED badge too.
+  const groups = counts ? agendaTies(open, counts) : []
+  const tied = new Set([
+    ...groups.flat().map((t) => t.id),
+    ...(tieRound && !revealed ? state.tie_topic_ids : []),
+  ])
   const [note, setNote] = useLiveNote()
 
   // When the clock runs out, any browser may ask the server to reveal; it checks the deadline.
@@ -142,9 +151,22 @@ export default function Vote({ ctx, remaining }: PhaseProps) {
   }
   // "I'm done" and the facilitator's reveal wait for every dot still being sent: the last
   // "I'm done" reveals the votes, and the server refuses a dot that arrives after that.
+  // A second press while the first is on its way does nothing (a double click on the last
+  // "I'm done" would otherwise be refused once the first has revealed the votes).
+  const pressing = useRef(new Set<string>())
+  const once = (key: string, call: () => Promise<unknown>) => {
+    if (pressing.current.has(key)) return
+    pressing.current.add(key)
+    void call().finally(() => pressing.current.delete(key))
+  }
   const finish = () =>
-    send(() => act('finish_voting', { p_board: state.board_id, p_done: !me?.finished_voting }))
-  const reveal = () => send(() => act('reveal_votes', { p_board: state.board_id }))
+    once('finish', () =>
+      send(() =>
+        act('finish_voting', { p_board: state.board_id, p_done: !me?.finished_voting }, MOVED_ON),
+      ),
+    )
+  const reveal = () =>
+    once('reveal', () => send(() => act('reveal_votes', { p_board: state.board_id }, MOVED_ON)))
 
   // One polite line when the votes are revealed or a tie-break vote opens; never per dot.
   const moment = `${revealed}|${state.vote_round}`
@@ -217,6 +239,7 @@ export default function Vote({ ctx, remaining }: PhaseProps) {
           ballot={ballot}
           tied={tied}
           revealed={revealed}
+          moment={moment}
           dots={{ on: dotsOn, left: budget - usedNow, cast }}
           list={listRef}
           heading={listHeadingRef}
@@ -233,6 +256,7 @@ export default function Vote({ ctx, remaining }: PhaseProps) {
             groups={groups}
             heading={stageHeadingRef}
             onNote={setNote}
+            once={once}
           />
         ) : (
           <VotingStage
@@ -369,7 +393,7 @@ function VotingStage({
             {Array.from({ length: present }, (_, i) => (
               <span
                 key={i}
-                className={`h-2.5 flex-1 rounded-full ${i < finished ? 'bg-teal' : 'bg-line'}`}
+                className={`h-2.5 flex-1 rounded-full forced-colors:border forced-colors:border-[CanvasText] ${i < finished ? 'bg-teal forced-colors:bg-[CanvasText]' : 'bg-line'}`}
               />
             ))}
           </div>
@@ -411,6 +435,7 @@ function ResultsStage({
   groups,
   heading,
   onNote,
+  once,
 }: {
   ctx: PhaseProps['ctx']
   open: Topic[]
@@ -418,11 +443,25 @@ function ResultsStage({
   groups: Topic[][]
   heading: RefObject<HTMLHeadingElement | null>
   onNote: (message: string) => void
+  /** Runs a press unless the same one is still on its way. */
+  once: (key: string, call: () => Promise<unknown>) => void
 }) {
   const { state, isFacilitator, act } = ctx
   const method = state.settings.tie_break
   const first = open[0]
   const dots = (id: string) => counts.main.get(id) ?? 0
+  const tieDots = (id: string) => counts.tie.get(id) ?? 0
+  // The draw leaves no mark on the board, so this tab remembers it until the stage changes.
+  const [drawn, setDrawn] = useState(false)
+  // The facilitator's arrows can move any topic; then the agenda no longer follows the dots.
+  const byDots = open.every((t, i) => {
+    const prev = open[i - 1]
+    if (!prev) return true
+    return (
+      dots(prev.id) > dots(t.id) ||
+      (dots(prev.id) === dots(t.id) && tieDots(prev.id) >= tieDots(t.id))
+    )
+  })
   return (
     <>
       <div className="flex flex-wrap gap-2">
@@ -440,6 +479,7 @@ function ResultsStage({
               <bdi>{first.author_name}</bdi>
             </b>{' '}
             · {plural(dots(first.id), 'vote')}
+            {tieDots(first.id) > 0 && ` + ${tieDots(first.id)} in the tie-break`}
           </p>
         </>
       ) : (
@@ -468,18 +508,25 @@ function ResultsStage({
             <p className="min-w-0 flex-1 basis-60 text-[15px]">
               <b>{groups.length === 1 ? 'One tie.' : `${groups.length} ties.`}</b>{' '}
               {method === 'drag' && 'Use the arrows to put tied topics in the order you want.'}
-              {method === 'random' && 'Break them with a random draw, or use the arrows.'}
+              {method === 'random' &&
+                (drawn
+                  ? 'Ties broken at random. Use the arrows to adjust, or draw again.'
+                  : 'Break them with a random draw, or use the arrows.')}
               {method === 'mini_vote' && 'Run a 30-second one-dot vote among tied topics.'}
             </p>
             {method === 'random' && (
               <Button
                 variant="secondary"
-                onClick={async () => {
-                  if (await act('break_ties_random', { p_board: state.board_id }))
-                    onNote('Ties broken at random.')
-                }}
+                onClick={() =>
+                  once('draw', async () => {
+                    if (await act('break_ties_random', { p_board: state.board_id }, MOVED_ON)) {
+                      setDrawn(true)
+                      onNote('Ties broken at random.')
+                    }
+                  })
+                }
               >
-                Break ties at random
+                {drawn ? 'Draw again' : 'Break ties at random'}
               </Button>
             )}
             {method === 'mini_vote' &&
@@ -488,10 +535,13 @@ function ResultsStage({
                   key={g[0]?.id}
                   variant="secondary"
                   onClick={() =>
-                    act('start_tie_vote', {
-                      p_board: state.board_id,
-                      p_topics: g.map((t) => t.id),
-                    })
+                    once('tie vote', () =>
+                      act(
+                        'start_tie_vote',
+                        { p_board: state.board_id, p_topics: g.map((t) => t.id) },
+                        MOVED_ON,
+                      ),
+                    )
                   }
                 >
                   Quick vote on {g.length} tied at {dots(g[0]?.id ?? '')}
@@ -504,7 +554,9 @@ function ResultsStage({
           </p>
         ))}
       <p className="mt-3 text-[14px] text-muted">
-        To discuss is the agenda, ordered by dots, then by any tie-break.
+        {byDots
+          ? 'To discuss is the agenda, ordered by dots, then by any tie-break.'
+          : 'To discuss is the agenda. The facilitator has moved topics out of dot order.'}
       </p>
     </>
   )
@@ -521,6 +573,7 @@ function TopicsColumn({
   ballot,
   tied,
   revealed,
+  moment,
   dots,
   list,
   heading,
@@ -530,6 +583,8 @@ function TopicsColumn({
   ballot: Topic[]
   tied: Set<string>
   revealed: boolean
+  /** Changes with the reveal and each tie-break round. */
+  moment: string
   dots: Dotting
   list: RefObject<HTMLOListElement | null>
   heading: RefObject<HTMLHeadingElement | null>
@@ -544,6 +599,12 @@ function TopicsColumn({
   const own = (t: Topic) => actions.filter((a) => a.topic_id === t.id)
   const headingId = useId()
   const skippedId = useId()
+  // A reveal or a tie-break round starts the column at its top, so the heading and rank 1 show
+  // beside the stage that names it, wherever the column was scrolled to for a dot.
+  useEffect(() => {
+    const column = heading.current?.closest('section')
+    if (column) column.scrollTop = 0
+  }, [moment, heading])
   const move = (index: number, delta: number) => {
     const ids = open.map((t) => t.id)
     const [id] = ids.splice(index, 1)

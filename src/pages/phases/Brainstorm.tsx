@@ -78,21 +78,29 @@ export default function Brainstorm({ ctx, remaining }: PhaseProps) {
     callWhenDue('close_brainstorm', { p_board: state.board_id })
   })
 
+  // How many of your cards the last add counted. A second topic sent before the first has come
+  // back in the list builds on it, so the count said out loud matches the counter.
+  const counted = useRef(0)
   async function add(e?: FormEvent) {
     e?.preventDefault()
     if (!text.trim() || full) return
     // Clear at once so a slow reply cannot wipe the next topic being typed.
     const draft = text
-    const used = mine.length + 1
+    const used = Math.min(PER_PERSON, Math.max(mine.length, counted.current) + 1)
+    counted.current = used
     setText('')
     if (await act('add_topic', { p_board: state.board_id, p_text: draft }))
       announce(`Added "${draft.trim()}". ${used} of ${PER_PERSON} used.`)
-    else setText(draft)
+    else {
+      counted.current = used - 1
+      setText(draft)
+    }
   }
 
   // The card's buttons go with it, so focus moves to the column heading.
   async function remove(t: Topic) {
     if (await act('delete_topic', { p_topic: t.id })) {
+      counted.current = Math.max(0, mine.length - 1)
       announce(`"${t.text}" was deleted.`)
       heading.current?.focus()
     }
@@ -100,8 +108,10 @@ export default function Brainstorm({ ctx, remaining }: PhaseProps) {
 
   const end = () => act('start_phase', { p_board: state.board_id, p_phase: 'clarify' })
   // As in Discuss (D76): a 200 px ring keeps 72 px digits and leaves room for the form on a
-  // 720 px share; a clock of 10:00 or more needs 240 px for its five characters.
+  // 720 px share; while the clock shows 10:00 or more it needs 240 px for its five characters,
+  // and the form gives up a row of its box so Add topic stays on the share.
   const totalMs = Math.max(remaining ?? 0, state.settings.brainstorm_s * 1000)
+  const big = formatClock(remaining ?? totalMs).length > 4
   const column = (
     <>
       <h2
@@ -195,17 +205,20 @@ export default function Brainstorm({ ctx, remaining }: PhaseProps) {
             remaining={remaining}
             totalMs={totalMs}
             paused={state.paused_remaining_ms !== null && !notStarted}
-            size={formatClock(totalMs).length > 4 ? 240 : 200}
+            size={big ? 240 : 200}
           />
         </div>
       </div>
       {/* With the clock, so they stay on a 720 px share above the form. */}
       {isFacilitator && (
-        <div ref={controls} className="mt-4 flex flex-wrap items-center gap-2">
+        <div
+          ref={controls}
+          className={`${big ? 'mt-3' : 'mt-4'} flex flex-wrap items-center gap-2`}
+        >
           {notStarted ? (
             <>
               <Button
-                className="h-14 px-8 text-[17px]"
+                className={`${big ? 'h-12' : 'h-14'} px-8 text-[17px]`}
                 disabled={starting}
                 onClick={async () => {
                   // Set first: the live update can arrive before the call returns.
@@ -218,7 +231,7 @@ export default function Brainstorm({ ctx, remaining }: PhaseProps) {
               >
                 Start the {formatClock(state.settings.brainstorm_s * 1000)} clock
               </Button>
-              <Button variant="secondary" className="h-14" onClick={end}>
+              <Button variant="secondary" className={big ? 'h-12' : 'h-14'} onClick={end}>
                 End brainstorm now
               </Button>
             </>
@@ -232,7 +245,7 @@ export default function Brainstorm({ ctx, remaining }: PhaseProps) {
       )}
       <form
         onSubmit={add}
-        className="mt-4 rounded-2xl border border-line-soft bg-surface p-4 dark:bg-ground"
+        className={`${big ? 'mt-3' : 'mt-4'} rounded-2xl border border-line-soft bg-surface p-4 dark:bg-ground`}
       >
         <label htmlFor={fieldId} className="text-[15px] font-bold">
           New topic
@@ -243,7 +256,7 @@ export default function Brainstorm({ ctx, remaining }: PhaseProps) {
           aria-describedby={countId}
           value={text}
           maxLength={TOPIC_MAX}
-          rows={2}
+          rows={big ? 1 : 2}
           disabled={full}
           onChange={(e) => setText(e.target.value.replace(/\n/g, ' '))}
           onKeyDown={(e) => {

@@ -1,8 +1,10 @@
-import { useId, useState, type FormEvent, type ReactNode, type RefObject } from 'react'
+import { useId, useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react'
 import { RingTimer } from '../../components/session/Clock'
+import { Dialog } from '../../components/session/Dialog'
 import { PeopleButton } from '../../components/session/People'
 import { Avatar, Button } from '../../components/ui'
 import { download } from '../../lib/export/download'
+import { mss } from '../../lib/export/model'
 import { boardTotals, cards, discussProgress, plural } from '../../lib/session'
 import { formatClock } from '../../lib/time'
 import type { BoardData } from '../../state/useBoard'
@@ -36,7 +38,7 @@ import { OwnerField, ownerName } from './OwnerField'
  * read-only (spec F25, decision D61): no inputs, done boxes disabled, downloads kept.
  */
 export default function WrapUp({ ctx, remaining }: PhaseProps) {
-  const { board, state } = ctx
+  const { board, state, isFacilitator } = ctx
   const { topics, votes, actions } = board.data
   const ended = state.phase === 'ended'
   const now = useNow(10_000)
@@ -63,6 +65,8 @@ export default function WrapUp({ ctx, remaining }: PhaseProps) {
       tools={
         <>
           <PeopleButton ctx={ctx} />
+          {/* The soft clock's buttons, here so the shared take-aways come up the share. */}
+          {isFacilitator && !ended && <TimerButtons ctx={ctx} />}
           <DownloadsButton data={board.data} />
         </>
       }
@@ -108,14 +112,23 @@ function WrapUpStage({
   const { board, state, isFacilitator, act } = ctx
   const [newAction, setNewAction] = useState('')
   const [owner, setOwner] = useState('')
+  // Kept here so End session can say when your own take-away is still unsent.
+  const [takeaway, setTakeaway] = useState('')
+  const actionField = useRef<HTMLInputElement>(null)
   const paused = state.paused_remaining_ms !== null
   const clock = state.phase_ends_at !== null || paused
   const totalMs = Math.max(state.settings.wrapup_s * 1000, remaining ?? 0)
 
   async function addAction(e: FormEvent) {
     e.preventDefault()
+    // Spaces alone would be refused silently, and the button would look broken.
+    if (!newAction.trim()) {
+      setNewAction('')
+      actionField.current?.focus()
+      onNote('Write an action first.')
+      return
+    }
     if (
-      newAction.trim() &&
       board.data.actions.length < ACTION_MAX &&
       (await act('add_action', {
         p_board: state.board_id,
@@ -131,8 +144,7 @@ function WrapUpStage({
 
   return (
     <>
-      {/* The facilitator's clock buttons sit beside the ring, under the heading, so the take-aways
-          and the downloads come up the share. */}
+      {/* The facilitator's clock buttons are in the toolbar, so the take-aways come up the share. */}
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
         <div className="min-w-0 grow basis-64">
           <span className={ACCENT_CHIP}>WRAPPING UP</span>
@@ -143,11 +155,6 @@ function WrapUpStage({
             One line each. Passing is fine.
             {clock && ' The clock is soft: the session ends when the facilitator ends it.'}
           </p>
-          {isFacilitator && clock && (
-            <div className="mt-3">
-              <TimerButtons ctx={ctx} />
-            </div>
-          )}
         </div>
         {clock && (
           // Centered when it wraps under the heading, as on a phone.
@@ -163,28 +170,35 @@ function WrapUpStage({
       </div>
       {/* The downloads and End session come straight after the take-away box, before the
           shared take-aways, so a long list cannot push them off a 720 px share. */}
-      <Takeaways ctx={ctx} onNote={onNote}>
+      <Takeaways
+        ctx={ctx}
+        onNote={onNote}
+        draft={[takeaway, setTakeaway]}
+        footer={
+          <p className="mt-2 text-[13px] text-muted">
+            Anyone in the session can download the files. Session data is deleted 7 days after the
+            session ends.
+          </p>
+        }
+      >
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <DownloadButtons data={board.data} onNote={onNote} />
           {isFacilitator && (
-            <Button
-              variant="dangerOutline"
-              className="h-12 sm:ml-auto"
-              onClick={() => act('end_session', { p_board: state.board_id })}
-            >
-              End session
-            </Button>
+            <EndSessionButton
+              ctx={ctx}
+              unsent={[
+                takeaway.trim() && 'Your take-away is not shared yet.',
+                newAction.trim() && 'Your new action is not added yet.',
+              ].filter((x): x is string => !!x)}
+            />
           )}
         </div>
-        <p className="mt-2 text-[13px] text-muted">
-          Anyone in the session can download the files. Session data is deleted 7 days after the
-          session ends.
-        </p>
       </Takeaways>
       <div className="mt-6">
         <Eyebrow>New actions</Eyebrow>
         <form onSubmit={addAction} className="mt-2 flex flex-wrap gap-2">
           <input
+            ref={actionField}
             aria-label="New action"
             dir="auto"
             value={newAction}
@@ -252,22 +266,42 @@ function Takeaways({
   ctx,
   onNote = () => {},
   readOnly = false,
+  draft,
   children,
+  footer,
 }: {
   ctx: PhaseProps['ctx']
   onNote?: (message: string) => void
   readOnly?: boolean
+  /** The take-away being typed, when the stage needs to know about it. */
+  draft?: [string, (text: string) => void]
   children?: ReactNode
+  /** After the shared take-aways. */
+  footer?: ReactNode
 }) {
   const { board, state, userId, act } = ctx
   const { takeaways, participants } = board.data
-  const [text, setText] = useState('')
+  const own = useState('')
+  const [text, setText] = draft ?? own
+  const field = useRef<HTMLInputElement>(null)
   const mine = takeaways.find((t) => t.user_id === userId)
   const shared = takeaways.filter((t) => !t.passed).length
+  // Someone removed after sharing keeps their take-away on the board, so they still count.
+  const people = new Set([
+    ...participants.map((p) => p.user_id),
+    ...takeaways.map((t) => t.user_id),
+  ]).size
 
   async function share(e: FormEvent) {
     e.preventDefault()
-    if (text.trim() && (await act('set_takeaway', { p_board: state.board_id, p_text: text }))) {
+    // Spaces alone would be refused silently, and the button would look broken.
+    if (!text.trim()) {
+      setText('')
+      field.current?.focus()
+      onNote('Write a take-away first, or press Pass.')
+      return
+    }
+    if (await act('set_takeaway', { p_board: state.board_id, p_text: text })) {
       setText('')
       onNote('Your take-away is shared.')
     }
@@ -275,10 +309,11 @@ function Takeaways({
 
   return (
     <div className="mt-6">
-      <Eyebrow right={`${shared} of ${participants.length} shared`}>Take-aways</Eyebrow>
+      <Eyebrow right={`${shared} of ${people} shared`}>Take-aways</Eyebrow>
       {!readOnly && (
         <form onSubmit={share} className="mt-2 flex flex-wrap gap-2">
           <input
+            ref={field}
             aria-label="Your take-away"
             dir="auto"
             value={text}
@@ -333,7 +368,66 @@ function Takeaways({
           ))}
         </ul>
       )}
+      {footer}
     </div>
+  )
+}
+
+/**
+ * End session in Wrap-up asks first, as it does in every other phase (D69): it cannot be undone,
+ * and whatever people are still typing is lost. It says who has not shared or passed yet, and
+ * when the facilitator's own take-away or action is unsent. One press at a time; a second end
+ * that lost the race to the first is not an error.
+ */
+function EndSessionButton({ ctx, unsent }: { ctx: PhaseProps['ctx']; unsent: string[] }) {
+  const { board, state, act } = ctx
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const { participants, takeaways } = board.data
+  const waiting = participants.filter((p) => !takeaways.some((t) => t.user_id === p.user_id))
+  return (
+    <>
+      <Button variant="dangerOutline" className="h-12 sm:ml-auto" onClick={() => setOpen(true)}>
+        End session
+      </Button>
+      <Dialog open={open} onClose={() => setOpen(false)} title="End the session now?">
+        <p className="mt-2 text-[15px] text-muted">
+          The board becomes read-only for everyone. Downloads stay available.
+        </p>
+        {waiting.length > 0 && (
+          <p className="mt-3 text-[15px]">
+            {waiting.length === 1
+              ? '1 person has not shared a take-away or passed yet.'
+              : `${waiting.length} people have not shared a take-away or passed yet.`}{' '}
+            Anything they are still typing is lost.
+          </p>
+        )}
+        {unsent.length > 0 && <p className="mt-3 text-[15px] font-bold">{unsent.join(' ')}</p>}
+        <div className="mt-5 flex justify-end gap-3">
+          <Button variant="ghost" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            className="aria-disabled:cursor-wait aria-disabled:opacity-60"
+            aria-disabled={busy || undefined}
+            onClick={async () => {
+              if (busy) return
+              setBusy(true)
+              const ok = await act(
+                'end_session',
+                { p_board: state.board_id },
+                { quiet: ['invalid_phase_order'] },
+              )
+              setBusy(false)
+              if (ok) setOpen(false)
+            }}
+          >
+            End session now
+          </Button>
+        </div>
+      </Dialog>
+    </>
   )
 }
 
@@ -410,7 +504,7 @@ function NotDiscussedColumn({
       </h2>
       {left.length === 0 ? (
         <p className="mt-2 rounded-xl border-2 border-dashed border-line p-4 text-[15px] text-muted">
-          Every topic on the board was discussed.
+          {all.length === 0 ? 'No topics were added.' : 'Every topic on the board was discussed.'}
         </p>
       ) : (
         <>
@@ -426,7 +520,12 @@ function NotDiscussedColumn({
                 </p>
                 <p className="mt-1 text-[13px] wrap-anywhere text-muted">
                   <bdi>{t.author_name}</bdi> · {plural(totals.get(t.id) ?? 0, 'vote')}
-                  {t.status === 'skipped' && ' · skipped'}
+                  {/* As the Word and Excel files say it (D100). */}
+                  {t.status === 'skipped'
+                    ? t.time_spent_ms > 0
+                      ? ` · skipped after ${mss(t.time_spent_ms)}`
+                      : ' · skipped'
+                    : t.time_spent_ms > 0 && ` · partly discussed, ${mss(t.time_spent_ms)}`}
                 </p>
                 <ActionList
                   ctx={ctx}
