@@ -75,9 +75,11 @@ test('script-like input is shown as text everywhere and never runs', async ({ br
   const g2 = guard(pat)
   await fac.goto('/')
   await fac.getByLabel('Name', { exact: true }).fill('<b>Fran</b>')
-  await fac.getByLabel('Name this session').fill(PAYLOADS[1] ?? '')
+  // Boards on the shared project are named "E2E …" so they can be told apart and cleaned up.
+  const boardName = `E2E ${PAYLOADS[1] ?? ''}`
+  await fac.getByLabel('Name this session').fill(boardName)
   await fac.getByRole('button', { name: 'Create board' }).click()
-  await expect(fac.getByRole('heading', { level: 1 })).toHaveText(PAYLOADS[1] ?? '')
+  await expect(fac.getByRole('heading', { level: 1 })).toHaveText(boardName)
   await pat.goto(fac.url())
   await pat.getByLabel('Name', { exact: true }).fill(NAME_PAYLOAD)
   await pat.getByRole('button', { name: 'Join session' }).click()

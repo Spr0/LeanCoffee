@@ -10,6 +10,10 @@ test.setTimeout(300_000)
 const btn = (page: Page, name: string) => page.getByRole('button', { name, exact: true })
 const card = (page: Page, text: string) => page.getByRole('listitem').filter({ hasText: text })
 const timer = (page: Page) => page.getByRole('timer')
+// A Clarify card's Edit or Delete. The board names them after the topic ('Edit "Alpha topic"'),
+// as in every other phase; the first board build said 'Edit' with the topic as its description.
+const cardButton = (page: Page, verb: 'Edit' | 'Delete', text: string) =>
+  card(page, text).getByRole('button', { name: new RegExp(`^${verb}( "${text}")?$`) })
 
 async function axe(page: Page, what: string): Promise<string[]> {
   const { violations } = await new AxeBuilder({ page }).analyze()
@@ -94,11 +98,11 @@ test('launch fixes for the facilitator controls', async ({ browser }) => {
   await btn(fran, 'End brainstorm now').click()
   await expect(fran.getByText('Suggested: 2 dots each (topics / 2, at most 5)')).toBeVisible()
   await btn(fran, 'Use 2 dots').click()
-  await expect(fran.getByText(/Opens 2 dots each/)).toBeVisible()
+  await expect(fran.getByText(/opens 2 dots each/i)).toBeVisible()
   await expect(btn(fran, 'Using 2 dots')).toBeDisabled()
 
   // Facilitator edit: inline, with a counter; Enter saves, Escape cancels.
-  await card(fran, 'Alpha topic').getByRole('button', { name: 'Edit', exact: true }).click()
+  await cardButton(fran, 'Edit', 'Alpha topic').click()
   const box = fran.getByRole('textbox', { name: 'Edit topic' })
   await expect(box).toBeFocused()
   await expect(fran.getByText('11 of 160 characters')).toBeVisible()
@@ -107,17 +111,15 @@ test('launch fixes for the facilitator controls', async ({ browser }) => {
   await axeBoth(fran, 'clarify, editing')
   await box.press('Enter')
   await expect(pat.getByText('Alpha topic, sharpened', { exact: true })).toBeVisible()
-  await card(fran, 'Bravo topic').getByRole('button', { name: 'Edit', exact: true }).click()
+  await cardButton(fran, 'Edit', 'Bravo topic').click()
   await box.fill('This should not be saved')
   await box.press('Escape')
   await expect(box).toHaveCount(0)
   await expect(card(fran, 'Bravo topic')).not.toContainText('This should not be saved')
-  await expect(
-    card(fran, 'Bravo topic').getByRole('button', { name: 'Edit', exact: true }),
-  ).toBeFocused()
+  await expect(cardButton(fran, 'Edit', 'Bravo topic')).toBeFocused()
 
   // Facilitator delete, after a confirmation.
-  await card(fran, 'Charlie topic').getByRole('button', { name: 'Delete', exact: true }).click()
+  await cardButton(fran, 'Delete', 'Charlie topic').click()
   const confirmDelete = fran.getByRole('dialog', { name: 'Delete this topic?' })
   await expect(confirmDelete).toContainText('Charlie topic')
   await expect(confirmDelete).toContainText('It is removed for everyone')
@@ -127,8 +129,8 @@ test('launch fixes for the facilitator controls', async ({ browser }) => {
   await expect(pat.getByText('This should not be saved')).toHaveCount(0)
 
   // Selecting cards for a merge still works by the card's own name.
-  await fran.getByRole('button', { name: /Bravo topic/ }).click()
-  await fran.getByRole('button', { name: /Delta topic/ }).click()
+  await fran.getByRole('button', { name: /^Bravo topic/ }).click()
+  await fran.getByRole('button', { name: /^Delta topic/ }).click()
   await expect(btn(fran, 'Merge 2 selected')).toBeVisible()
   await btn(fran, 'Keep separate').click()
 

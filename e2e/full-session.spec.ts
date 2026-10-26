@@ -57,9 +57,11 @@ test('six people run a whole session', async ({ browser }) => {
     await page.getByRole('button', { name: 'Join session' }).click()
     await expect(page.getByText(/Waiting for Fran/)).toBeVisible()
   }
-  // The lobby counts people seen in the last 45 s; allow the last heartbeat to arrive.
+  // Fran's lobby counts everyone once Realtime streams changes. The first spec of a CI job meets
+  // a freshly started local Realtime that can take tens of seconds to start streaming; the board
+  // reloads the moment it does, so this wait ends as soon as the stack is ready.
   await expect(fran.getByRole('button', { name: 'Start brainstorm for 6 people' })).toBeVisible({
-    timeout: 20_000,
+    timeout: 45_000,
   })
   await fran.getByRole('button', { name: 'Start brainstorm for 6 people' }).click()
 
@@ -141,12 +143,9 @@ test('six people run a whole session', async ({ browser }) => {
     })
     .filter((r: { dots?: number; user_id?: string } | null) => typeof r?.dots === 'number')
   expect(new Set(voteRows.map((r: { user_id: string }) => r.user_id)).size).toBeLessThanOrEqual(1)
-  await expect(pat.getByRole('heading', { name: 'Here is the agenda' })).toHaveCount(0)
+  await expect(pat.getByRole('region', { name: 'Results' })).toHaveCount(0)
   await at(pages, 'Tess').getByRole('button', { name: "I'm done" }).click()
-  // The reveal re-ranks every topic, and six browsers reload the board at once.
-  await expect(pat.getByRole('heading', { name: 'Here is the agenda' })).toBeVisible({
-    timeout: 20_000,
-  })
+  await expect(pat.getByRole('region', { name: 'Results' })).toBeVisible()
   await expect(
     pat.getByRole('listitem').filter({ hasText: 'Onboarding remote hires' }),
   ).toContainText('5')

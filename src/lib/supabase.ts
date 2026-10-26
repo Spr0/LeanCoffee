@@ -5,8 +5,13 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
   throw new Error('VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY must be set')
 }
 
+// Realtime's default backoff reaches 10 s between tries; a board on a shared screen should catch
+// up sooner after a dropped connection (useBoard also reconnects at once when the network returns).
+const RECONNECT_MS = [500, 1_000, 2_000, 5_000]
+
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+  realtime: { reconnectAfterMs: (tries: number) => RECONNECT_MS[tries - 1] ?? 5_000 },
 })
 
 let pendingSession: Promise<string> | null = null
@@ -59,6 +64,13 @@ const MESSAGES: Record<string, string> = {
   timer_not_running: 'The clock is not running.',
   timer_not_paused: 'The clock is already running.',
   round_closed: 'That vote has closed.',
+  round_unavailable: 'That vote is no longer open.',
+  action_limit: 'This board holds at most 60 actions.',
+  action_unavailable: 'That action has changed or is gone. Check the board.',
+  invalid_adjustment: 'The clock cannot change by that much.',
+  invalid_dots: 'That is not a number of dots you can give.',
+  invalid_outcome: 'That is not a way to finish a topic.',
+  busy: 'The server is busy and did not save that. Try again.',
   network: 'Connection problem. Your last change may not have saved.',
 }
 
@@ -70,15 +82,38 @@ export class AppError extends Error {
   }
 }
 
+// Postgres cancelled the statement (statement timeout): nothing was saved.
+const CANCELLED = '57014'
+
+// Calls that give the same result when repeated, so a call the server cancelled is tried once
+// more: an extend vote has 15 s to count and everyone casts it at the same moment.
+const REPEATABLE = new Set(['cast_extend_vote'])
+
+const notMember = new Set<(fn: string) => void>()
+
+/**
+ * Runs `listener` with the RPC's name whenever the server refuses one because the caller is not
+ * on the board, so the board can show that at once. Returns a function that stops listening.
+ */
+export function onNotMember(listener: (fn: string) => void): () => void {
+  notMember.add(listener)
+  return () => notMember.delete(listener)
+}
+
 /** Calls an RPC and turns database error codes into readable messages. */
 export async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T> {
-  const { data, error } = await supabase.rpc(fn, args)
+  let result = await supabase.rpc(fn, args)
+  if (result.error?.code === CANCELLED && REPEATABLE.has(fn)) result = await supabase.rpc(fn, args)
+  const { data, error } = result
   if (error) {
     const code = /^[a-z_]+$/.test(error.message)
       ? error.message
       : error.code === '23514'
         ? 'invalid_setting'
-        : 'network'
+        : error.code === CANCELLED
+          ? 'busy'
+          : 'network'
+    if (code === 'not_member') notMember.forEach((listener) => listener(fn))
     throw new AppError(code)
   }
   return data as T
