@@ -87,7 +87,7 @@ test('script-like input is shown as text everywhere and never runs', async ({ br
     await pat.getByLabel('New topic').fill(p)
     await pat.getByLabel('New topic').press('Enter')
   }
-  await expect(pat.getByText('Your topics')).toBeVisible()
+  await expect(pat.getByRole('region', { name: 'To discuss' }).getByText('YOURS')).toHaveCount(4)
   // Bidi overrides and zero-width characters are stripped on the server.
   await expect(pat.getByText('gnp.exe', { exact: true })).toBeVisible()
   await expect(pat.getByText('zerowidth', { exact: true })).toBeVisible()
