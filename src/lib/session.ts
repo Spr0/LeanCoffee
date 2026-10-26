@@ -117,12 +117,35 @@ export const LONG_TOPIC = 45
 
 /**
  * Stage ring size in px. A long topic or the extend vote shrinks the ring, never the type: the
- * topic stays at 44 px and the digits at 72 px for Teams screen sharing. A clock of 10:00 or more
- * takes the 240 px ring, as its five characters need the room inside even at 64 px.
+ * topic stays at 44 px and the digits at 72 px for Teams screen sharing. A clock that shows 10:00
+ * or more takes the 240 px ring, as its five characters need the room inside even at 64 px. The
+ * size follows the clock as shown, so a 10:00 discussion drops back to the smaller ring at 9:59
+ * instead of squeezing a long topic beside a 240 px ring for the whole topic.
  */
-export function stageRingSize(text: string, voting: boolean, longestMs: number): number {
-  if (formatClock(longestMs).length > 4) return 240
+export function stageRingSize(text: string, voting: boolean, shownMs: number): number {
+  if (formatClock(shownMs).length > 4) return 240
   return voting || text.length > LONG_TOPIC ? 200 : 220
+}
+
+/**
+ * Whether the board's tables agree with each other. The board state, the topics and the extend
+ * votes reload separately, so for a moment after a change one can be newer than another: the topic
+ * on stage already listed in Discussed, the topic just started still open in the queue, or a Move
+ * on result missing under Up next. The stage shows the last board that agreed until they catch up.
+ */
+export function boardAgrees(
+  state: Pick<BoardState, 'current_topic_id'>,
+  topics: Topic[],
+  rounds: ExtendRound[],
+): boolean {
+  const current = state.current_topic_id
+  const onStage = topics.filter((t) => t.status === 'discussing')
+  if (onStage.length > 1 || (onStage[0]?.id ?? null) !== current) return false
+  // Only the topic on stage can have a vote open.
+  if (rounds.some((r) => r.closed_at === null && r.topic_id !== current)) return false
+  // A Move on result takes its topic off stage in the same change; Extend anyway sets it to extend.
+  const last = lastRound(rounds, current)
+  return !(last?.result === 'move_on' && last.keep_count !== null)
 }
 
 /** The board as one announcement compares it: topics and extend votes. */
@@ -132,15 +155,17 @@ export interface BoardMoment {
 }
 
 /**
- * One polite announcement for what changed between two snapshots of the board: an extend vote's
- * result, or a topic starting, finishing, skipped or deferred. Topics and votes reload separately,
- * so a topic that leaves the stage while its vote still looks open is said once the vote closes.
+ * One polite announcement for what changed between two snapshots of the board: an extend vote
+ * opening or its result, or a topic starting, finishing, skipped or deferred. Topics and votes
+ * reload separately, so a topic that leaves the stage while its vote still looks open is said once
+ * the vote closes. A topic already named by its vote's result is not named again as it restarts.
  */
 export function boardMoves(before: BoardMoment, after: BoardMoment, extendMs: number): string {
   const was = new Map(before.topics.map((t) => [t.id, t.status]))
   const wasRound = new Map(before.rounds.map((r) => [r.id, r]))
   const topics = new Map(after.topics.map((t) => [t.id, t]))
   const said: string[] = []
+  const named = new Set<string>()
   const left = (t: Topic) =>
     t.status === 'discussed'
       ? `"${t.text}" moved to Discussed after ${formatDuration(t.time_spent_ms)}.`
@@ -151,9 +176,17 @@ export function boardMoves(before: BoardMoment, after: BoardMoment, extendMs: nu
           : ''
   for (const r of after.rounds) {
     const old = wasRound.get(r.id)
-    if (!r.closed_at || (old?.closed_at && old.result === r.result)) continue
     const t = topics.get(r.topic_id)
     const text = t ? `"${t.text}"` : 'the topic'
+    if (!r.closed_at) {
+      // A vote that just opened, at zero or by Call vote now: it is over in 15 seconds.
+      if (!old && before.topics.length > 0) {
+        const s = Math.round((Date.parse(r.closes_at) - Date.parse(r.opened_at)) / 1000)
+        said.push(`Vote now: keep talking about ${text}? Results in ${s} seconds.`)
+      }
+      continue
+    }
+    if (old?.closed_at && old.result === r.result) continue
     if (r.keep_count === null) {
       // Closed by Next topic, Skip or Defer to later: the topic's move is the news.
       if (t && t.status !== 'discussing' && was.get(t.id) !== 'discussing') said.push(left(t))
@@ -162,12 +195,14 @@ export function boardMoves(before: BoardMoment, after: BoardMoment, extendMs: nu
         `The group chose to move on: ${text} moved to Discussed (${r.keep_count} keep going, ${r.neutral_count} neutral, ${r.move_on_count} move on).`,
       )
     } else {
-      const added = `${formatClock(extendMs)} added`
+      // The server restarts the clock at the extension time, also when the vote was called early.
+      const restart = `the clock restarts at ${formatClock(extendMs)}`
       said.push(
         extendOutcome(r.keep_count, r.move_on_count ?? 0) === 'extend'
-          ? `The group chose to keep going on ${text}: ${added}.`
-          : `The facilitator extended ${text}: ${added}.`,
+          ? `The group chose to keep going on ${text}: ${restart}.`
+          : `The facilitator extended ${text}: ${restart}.`,
       )
+      named.add(r.topic_id)
     }
   }
   for (const t of after.topics) {
@@ -184,6 +219,7 @@ export function boardMoves(before: BoardMoment, after: BoardMoment, extendMs: nu
   const started = after.topics.find(
     (t) => t.status === 'discussing' && was.get(t.id) !== 'discussing',
   )
-  if (started && was.has(started.id)) said.push(`Now discussing "${started.text}".`)
+  if (started && was.has(started.id) && !named.has(started.id))
+    said.push(`Now discussing "${started.text}".`)
   return said.join(' ')
 }

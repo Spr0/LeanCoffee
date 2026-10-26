@@ -1,4 +1,12 @@
-import { useEffect, useId, useRef, useState, type FormEvent, type RefObject } from 'react'
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react'
 import { RingTimer } from '../../components/session/Clock'
 import { PeopleButton } from '../../components/session/People'
 import { Button } from '../../components/ui'
@@ -20,7 +28,7 @@ import {
 import { callWhenDue } from '../../lib/retry'
 import { formatClock, isPresent } from '../../lib/time'
 import type { ExtendRound, ExtendVote, Topic } from '../../lib/types'
-import { useAtZero } from '../../state/useCountdown'
+import { useAtZero, useCountdown } from '../../state/useCountdown'
 import { useNow } from '../../state/useNow'
 import { ActionItem, DiscussedColumn, QueueColumn } from './BoardColumns'
 import {
@@ -38,6 +46,7 @@ import {
 } from './common'
 import { DownloadsButton } from './Downloads'
 import { OwnerField, ownerName } from './OwnerField'
+import { useSettledBoard } from './StageSnapshot'
 import { TopicEditor } from './TopicTools'
 
 const CHOICES: { value: ExtendVote['choice']; label: string }[] = [
@@ -46,16 +55,49 @@ const CHOICES: { value: ExtendVote['choice']; label: string }[] = [
   { value: 'move_on', label: 'Move on' },
 ]
 
+/** The topic as the stage's page heading: 44 px for the Teams share. Long words and links break. */
+const FOCUS_TITLE =
+  'text-[44px] leading-[1.08] font-extrabold tracking-tight [overflow-wrap:anywhere] [text-wrap:pretty]'
+/** The stage's page heading when no topic is up next. */
+const STAGE_TITLE = 'text-[36px] leading-tight font-extrabold'
+/** Up next in the pine family, as on the To discuss card; outlined, unlike DISCUSSING NOW. */
+const UP_NEXT_CHIP =
+  'inline-block rounded-md border-2 border-teal px-2 py-0.5 text-[14px] font-extrabold tracking-[0.08em] text-teal'
+/** A stage button whose press is still on its way: it keeps focus and does nothing. */
+const BUSY = 'aria-disabled:cursor-wait aria-disabled:opacity-60'
+/** How long a pressed stage button waits for the stage to change before it works again. */
+const PRESS_MS = 8000
+
+/** What someone has typed into a topic's action form, kept when the form moves (Next topic). */
+interface Draft {
+  text: string
+  owner: string
+}
+interface Forms {
+  drafts: Record<string, Draft>
+  setDraft: (topicId: string, draft: Draft) => void
+  /** The action field that has focus, so a form that replaces it can take the focus back. */
+  typing: RefObject<{ topic: string; field: 'text' | 'owner' } | null>
+  /** The topic whose action form has focus, if any. */
+  focused: string | null
+  setFocused: (topicId: string | null) => void
+}
+const EMPTY_DRAFT: Draft = { text: '', owner: '' }
+
 /**
  * Discuss as the board: To discuss on the left, the stage in the middle, Discussed on the right,
  * under a one-line toolbar with progress, people and downloads. Built for a 1280 x 720 Teams share.
  */
-export default function Discuss({ ctx, remaining }: PhaseProps) {
+export default function Discuss({ ctx: live, remaining: liveRemaining }: PhaseProps) {
+  const now = useNow(1000)
+  // The stage and both columns show the last board whose tables agree (see useSettledBoard).
+  const { ctx, held } = useSettledBoard(live, now)
+  const heldRemaining = useCountdown(ctx.state, ctx.board.offsetMs)
+  const remaining = held ? heldRemaining : liveRemaining
   const { board, state, isFacilitator, act } = ctx
   const { topics, extendRounds } = board.data
   // The live line: a repeat (a second extension) is read out too.
   const [note, setNote] = useLiveNote()
-  const now = useNow(1000)
   const nowServer = now + board.offsetMs
   const current = topics.find((t) => t.id === state.current_topic_id)
   const queue = cards(topics).filter((t) => t.status === 'open')
@@ -77,9 +119,15 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
           state.settings.wrapup_s,
         )
   const roundLeft = round ? Math.max(0, Date.parse(round.closes_at) - nowServer) : null
-  // Keep a closed vote's result on screen for 10 s, or while the clock sits at zero.
+  // A closed vote's result stays on screen for 10 s. At zero only this clock's own vote shows: an
+  // earlier vote on the topic (the one that extended it) would say "Voting closed" as one opens.
   const recentlyClosed = last?.closed_at ? nowServer - Date.parse(last.closed_at) < 10_000 : false
-  const shownRound = round ?? (last && (remaining === 0 || recentlyClosed) ? last : undefined)
+  const thisClocks =
+    last !== undefined &&
+    state.phase_ends_at !== null &&
+    Date.parse(last.opened_at) >= Date.parse(state.phase_ends_at) - 1000
+  const shownRound =
+    round ?? (last && (remaining === 0 ? thisClocks : recentlyClosed) ? last : undefined)
   const lastDiscussed = discussed.at(-1)
   // A Move on vote takes the topic off stage on the server; its result stays up until the next
   // topic starts, so the facilitator can still override it. Rounds force-closed have no counts.
@@ -99,8 +147,14 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
     if (round) callWhenDue('resolve_extend_round', { p_round: round.id })
   })
 
-  // One polite line when an extend vote closes, or a topic starts, finishes, is skipped or
-  // deferred; never per second. The panels that show these results are not live regions, as
+  // Discuss opens at the top of the page, with the header and the stage on the share, wherever
+  // the agenda was scrolled to when the facilitator pressed Start discussing.
+  useEffect(() => {
+    if (window.scrollY > 0) window.scrollTo(0, 0)
+  }, [])
+
+  // One polite line when an extend vote opens or closes, or a topic starts, finishes, is skipped
+  // or deferred; never per second. The panels that show these results are not live regions, as
   // regions added with their text already in them are read out unreliably.
   const moveKey = [
     ...topics.map((t) => `${t.id}:${t.status}`),
@@ -117,11 +171,54 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
     if (message) setNote(message)
   }
 
+  // The last 5 minutes: said once in the live line, and shown in the toolbar so it adds no height.
+  const warning =
+    minutesLeft === null || minutesLeft > 5
+      ? null
+      : minutesLeft <= 0
+        ? `Past the planned ${state.planned_minutes} min. Time to wrap up.`
+        : `About ${Math.max(1, Math.ceil(minutesLeft))} min left. Time to wrap up.`
+  const [warned, setWarned] = useState(false)
+  if (warning && !warned) {
+    setWarned(true)
+    setNote(warning)
+  }
+
+  // Action drafts live here, so Next topic or a Move on result does not throw away what someone
+  // was typing for the topic that just left the stage.
+  const [drafts, setDrafts] = useState<Record<string, Draft>>({})
+  const typing = useRef<{ topic: string; field: 'text' | 'owner' } | null>(null)
+  const [focused, setFocused] = useState<string | null>(null)
+  // A form removed with the focus in it never hears its blur; the next focus anywhere else says
+  // nobody is in one any more.
+  useEffect(() => {
+    const leave = (e: FocusEvent) => {
+      if (e.target instanceof Element && e.target.closest('[data-action-form]')) return
+      typing.current = null
+      setFocused(null)
+    }
+    document.addEventListener('focusin', leave)
+    return () => document.removeEventListener('focusin', leave)
+  }, [])
+  const forms: Forms = {
+    drafts,
+    typing,
+    focused,
+    setFocused,
+    setDraft: (topicId, draft) => setDrafts((all) => ({ ...all, [topicId]: draft })),
+  }
+
+  // One press at a time on the stage: a second press (a double-click, or Defer then Skip) waits
+  // until the stage has changed, so it never lands on a topic nobody has seen on stage yet.
+  const press = useStagePress(act, `${current?.id}|${round?.id}|${movedOn?.id}`, now)
+
   // A pressed stage button often leaves with the stage's old content (Next topic, Skip, Start the
-  // clock, Call vote now). Focus then moves to the stage heading instead of the top of the page.
-  const { area: stage, target: heading } = useRefocus<HTMLElement, HTMLHeadingElement>(
+  // clock, Call vote now). Focus then moves to the stage heading instead of the top of the page;
+  // after a Move on result, to the result, so Extend anyway is the next Tab stop.
+  const { area: stage, target: heading } = useRefocus<HTMLElement, HTMLElement>(
     `${current?.id}|${round?.id}|${shownRound?.id}`,
   )
+  const wrapUp = () => press.run('start_phase', { p_board: state.board_id, p_phase: 'wrapup' })
 
   const stageContent = current ? (
     <Stage
@@ -134,21 +231,38 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
       shownRound={shownRound}
       roundLeft={roundLeft}
       heading={heading}
+      press={press}
+      forms={forms}
+      carry={
+        // A draft, or a form someone is in, for the topic that just left (auto-start next).
+        lastDiscussed &&
+        (focused === lastDiscussed.id ||
+          (drafts[lastDiscussed.id]?.text ?? '').trim() ||
+          (drafts[lastDiscussed.id]?.owner ?? '').trim())
+          ? lastDiscussed
+          : undefined
+      }
     />
   ) : (
     <>
-      {/* The topic is not repeated here: it is last in Discussed, and the live line names it.
-          That keeps a long Up next topic and its start button on the share. */}
+      {/* The topic is not repeated here: it is last in Discussed, and the live line names it. */}
       {movedOn && (
-        <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border-2 border-teal px-4 py-3">
-          <p className="flex-1 text-[17px]">
-            <b>The group chose to move on.</b> {movedOn.keep_count} keep going,{' '}
-            {movedOn.neutral_count} neutral, {movedOn.move_on_count} move on.
+        <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border-2 border-line-strong px-4 py-3">
+          <p
+            ref={heading as RefObject<HTMLParagraphElement | null>}
+            tabIndex={-1}
+            className="min-w-0 flex-1 text-[17px]"
+          >
+            <b className="block">The group chose to move on.</b>
+            {movedOn.keep_count} keep going, {movedOn.neutral_count} neutral,{' '}
+            {movedOn.move_on_count} move on.
           </p>
           {isFacilitator && (
             <Button
               variant="secondary"
-              onClick={() => act('extend_topic', { p_board: state.board_id })}
+              className={BUSY}
+              aria-disabled={press.busy || undefined}
+              onClick={() => press.run('extend_topic', { p_board: state.board_id })}
             >
               Extend {formatClock(state.settings.extend_s * 1000)} anyway
             </Button>
@@ -160,12 +274,15 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
         next={queue[0]}
         votes={queue[0] ? (totals.get(queue[0].id) ?? 0) : 0}
         skipped={skipped.length}
-        heading={heading}
+        heading={movedOn ? undefined : heading}
+        press={press}
+        onWrapUp={wrapUp}
       />
       {lastDiscussed && (
         <ActionsFor
           ctx={ctx}
-          topicId={lastDiscussed.id}
+          topic={lastDiscussed}
+          forms={forms}
           label="Actions from the last topic"
           list={false}
         />
@@ -182,6 +299,7 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
             state={state}
             nowMs={nowServer}
             extra={
+              warning === null &&
               fit !== null &&
               (fit === 0 ? (
                 ' · no more topics fit'
@@ -196,34 +314,25 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
               ))
             }
           />
+          {warning && (
+            // Words, not color alone; in the toolbar, so the stage keeps its room on the share.
+            <p className="rounded-md border-2 border-urgent px-2.5 py-1 text-[15px] font-bold">
+              {warning}
+            </p>
+          )}
         </>
       }
       tools={
         <>
+          {/* Between topics Start wrap-up is on the stage already. */}
+          {warning && isFacilitator && current && (
+            <Button className={BUSY} aria-disabled={press.busy || undefined} onClick={wrapUp}>
+              Start wrap-up
+            </Button>
+          )}
           <PeopleButton ctx={ctx} />
           <DownloadsButton data={board.data} />
         </>
-      }
-      banner={
-        minutesLeft !== null &&
-        minutesLeft <= 5 && (
-          // One line, so the extend vote and the action form stay on a 720 px share.
-          <div
-            role="status"
-            className="flex flex-wrap items-center gap-x-4 rounded-xl border-2 border-urgent px-4 py-1"
-          >
-            <p className="flex-1 py-2 text-[16px] font-bold">
-              About 5 minutes left in the session. Time to wrap up.
-            </p>
-            {isFacilitator && (
-              <Button
-                onClick={() => act('start_phase', { p_board: state.board_id, p_phase: 'wrapup' })}
-              >
-                Start wrap-up
-              </Button>
-            )}
-          </div>
-        )
       }
       left={<QueueColumn ctx={ctx} totals={totals} onNote={setNote} className={FILL_LEFT} />}
       stageLabel="Discussing"
@@ -233,6 +342,37 @@ export default function Discuss({ ctx, remaining }: PhaseProps) {
       note={note}
     />
   )
+}
+
+interface Press {
+  busy: boolean
+  run: (fn: string, args: Record<string, unknown>) => void
+}
+
+/**
+ * Stage presses that change the stage (Next topic, Defer, Skip, Start the clock, Call vote now,
+ * Extend anyway, Re-vote, Start wrap-up). The facilitator's own tab can take a second or two to
+ * show the change, so until the stage `key` changes (or the call fails, or PRESS_MS passes) the
+ * buttons stay focusable but do nothing. Otherwise a second press acts on the next topic.
+ */
+function useStagePress(act: PhaseProps['ctx']['act'], key: string, nowMs: number): Press {
+  const [pending, setPending] = useState<{ key: string; at: number } | null>(null)
+  const inFlight = useRef(false)
+  if (pending && (pending.key !== key || nowMs - pending.at > PRESS_MS)) setPending(null)
+  useEffect(() => {
+    if (!pending) inFlight.current = false
+  }, [pending])
+  return {
+    busy: pending !== null,
+    run: (fn, args) => {
+      if (inFlight.current || pending) return
+      inFlight.current = true
+      setPending({ key, at: Date.now() })
+      void act(fn, args).then((ok) => {
+        if (!ok) setPending(null)
+      })
+    },
+  }
 }
 
 /** The topic on stage: badges, the topic as the page heading, the ring, controls and actions. */
@@ -245,6 +385,9 @@ function Stage({
   shownRound,
   roundLeft,
   heading,
+  press,
+  forms,
+  carry,
 }: {
   ctx: PhaseProps['ctx']
   topic: Topic
@@ -253,10 +396,16 @@ function Stage({
   round: ExtendRound | undefined
   shownRound: ExtendRound | undefined
   roundLeft: number | null
-  heading: RefObject<HTMLHeadingElement | null>
+  heading: RefObject<HTMLElement | null>
+  press: Press
+  forms: Forms
+  /** The last topic, while someone has an action draft for it or is in its form. */
+  carry: Topic | undefined
 }) {
-  const { state, isFacilitator, act } = ctx
+  const { state, isFacilitator } = ctx
   const [editing, setEditing] = useState(false)
+  // The role can move while the editor is open: a participant is never offered an edit.
+  if (editing && !isFacilitator) setEditing(false)
   const editId = useId()
   // Save, Cancel and Escape put focus back on the Edit button.
   const refocus = useRef(false)
@@ -272,14 +421,15 @@ function Stage({
     (topic.extensions > 0 ? state.settings.extend_s : state.settings.discuss_s) * 1000,
   )
   const outcome = (p_outcome: 'discussed' | 'deferred' | 'skipped') =>
-    act('next_topic', { p_board: state.board_id, p_outcome })
+    press.run('next_topic', { p_board: state.board_id, p_outcome })
+  const busy = { className: BUSY, 'aria-disabled': press.busy || undefined }
   // A long topic or the extend vote shrinks the ring; the type stays at 44 px.
   const ring = (
     <RingTimer
       remaining={remaining}
       totalMs={totalMs}
       paused={state.paused_remaining_ms !== null}
-      size={stageRingSize(topic.text, shownRound !== undefined, totalMs)}
+      size={stageRingSize(topic.text, shownRound !== undefined, remaining ?? totalMs)}
     />
   )
   const chips = (
@@ -291,27 +441,34 @@ function Stage({
   )
   const words = (
     <>
+      {/* While editing, the editor takes the heading's place on the share; the heading stays for
+          screen readers and as the focus target. During the vote a long topic shows three lines
+          (all of it for screen readers), so the vote stays on the share. */}
       <h1
-        ref={heading}
+        ref={heading as RefObject<HTMLHeadingElement | null>}
         tabIndex={-1}
-        className="text-[44px] leading-[1.08] font-extrabold tracking-tight break-words"
+        dir="auto"
+        className={editing ? 'sr-only' : `${FOCUS_TITLE} ${shownRound ? 'line-clamp-3' : ''}`}
       >
         {topic.text}
       </h1>
       {editing && (
-        <div className="mt-3">
-          <TopicEditor
-            ctx={ctx}
-            topic={topic}
-            onDone={() => {
-              refocus.current = true
-              setEditing(false)
-            }}
-          />
-        </div>
+        <TopicEditor
+          ctx={ctx}
+          topic={topic}
+          large
+          onDone={() => {
+            refocus.current = true
+            setEditing(false)
+          }}
+        />
       )}
       <p className="mt-2 text-[17px] text-muted">
-        Raised by <b className="text-ink">{topic.author_name}</b>, who starts the conversation
+        Raised by{' '}
+        <b className="text-ink">
+          <bdi>{topic.author_name}</bdi>
+        </b>
+        , who starts the conversation
       </p>
     </>
   )
@@ -319,9 +476,12 @@ function Stage({
     <>
       {topic.text.length > LONG_TOPIC ? (
         // A long topic runs full width under the ring, which floats beside the badges and the
-        // topic's first lines. On a narrow stage the ring goes under the topic instead.
+        // topic's first lines, and the lines follow its circle. On a narrow stage the ring goes
+        // under the topic instead.
         <div className="flex flex-col gap-3 @lg:flow-root">
-          <div className="order-last mx-auto @lg:float-right @lg:mb-2 @lg:ml-6">{ring}</div>
+          <div className="order-last mx-auto @lg:float-right @lg:mb-2 @lg:ml-6 @lg:[shape-margin:16px] @lg:[shape-outside:circle(50%)]">
+            {ring}
+          </div>
           {chips}
           <div className="min-w-0 @lg:mt-3">{words}</div>
         </div>
@@ -346,16 +506,19 @@ function Stage({
           {!round && (
             <Button
               variant="secondary"
-              onClick={() => act('open_extend_round', { p_board: state.board_id })}
+              {...busy}
+              onClick={() => press.run('open_extend_round', { p_board: state.board_id })}
             >
               Call vote now
             </Button>
           )}
-          <Button onClick={() => outcome('discussed')}>Next topic</Button>
-          <Button variant="ghost" onClick={() => outcome('deferred')}>
+          <Button {...busy} onClick={() => outcome('discussed')}>
+            Next topic
+          </Button>
+          <Button variant="ghost" {...busy} onClick={() => outcome('deferred')}>
             Defer to later
           </Button>
-          <Button variant="ghost" onClick={() => outcome('skipped')}>
+          <Button variant="ghost" {...busy} onClick={() => outcome('skipped')}>
             Skip
           </Button>
           {!editing && (
@@ -370,7 +533,16 @@ function Stage({
           )}
         </div>
       )}
-      <ActionsFor ctx={ctx} topicId={topic.id} />
+      <ActionsFor ctx={ctx} topic={topic} forms={forms} />
+      {carry && (
+        <ActionsFor
+          ctx={ctx}
+          topic={carry}
+          forms={forms}
+          label="Actions from the last topic"
+          list={false}
+        />
+      )}
     </>
   )
 }
@@ -382,58 +554,85 @@ function UpNext({
   votes,
   skipped,
   heading,
+  press,
+  onWrapUp,
 }: {
   ctx: PhaseProps['ctx']
   next: Topic | undefined
   votes: number
   skipped: number
-  heading: RefObject<HTMLHeadingElement | null>
+  heading: RefObject<HTMLElement | null> | undefined
+  press: Press
+  onWrapUp: () => void
 }) {
-  const { state, isFacilitator, act } = ctx
-  const wrapUp = () => act('start_phase', { p_board: state.board_id, p_phase: 'wrapup' })
-  if (!next)
+  const { state, isFacilitator } = ctx
+  const disabled = press.busy || undefined
+  const h1Ref = heading as RefObject<HTMLHeadingElement | null> | undefined
+  if (!next) {
+    const hint: ReactNode = isFacilitator ? (
+      skipped > 0 ? (
+        'Bring back a skipped topic from To discuss, or start wrap-up.'
+      ) : (
+        'Start wrap-up to collect take-aways and download the results.'
+      )
+    ) : (
+      <b className="text-ink">Waiting for the facilitator to start wrap-up.</b>
+    )
     return (
       <>
-        <h1 ref={heading} tabIndex={-1} className="text-[36px] leading-tight font-extrabold">
+        <h1 ref={h1Ref} tabIndex={-1} className={STAGE_TITLE}>
           {skipped > 0 ? 'No topics left in the queue' : 'Every topic has been discussed'}
         </h1>
+        <p className="mt-2 text-[17px] text-muted">{hint}</p>
         {isFacilitator && (
-          <Button className="mt-6 h-14 px-8" onClick={wrapUp}>
+          <Button className={`mt-6 h-14 px-8 ${BUSY}`} aria-disabled={disabled} onClick={onWrapUp}>
             Start wrap-up
           </Button>
         )}
       </>
     )
+  }
   return (
     <>
-      <span className={`${CHIP} font-extrabold tracking-[0.08em]`}>UP NEXT</span>
-      <h1
-        ref={heading}
-        tabIndex={-1}
-        className="mt-3 text-[44px] leading-[1.08] font-extrabold tracking-tight break-words"
-      >
-        {next.text}
-      </h1>
-      <p className="mt-2 text-[17px] text-muted">
-        Raised by <b className="text-ink">{next.author_name}</b> · {plural(votes, 'vote')}
-      </p>
-      {isFacilitator ? (
-        <div className="mt-6 flex flex-wrap gap-2">
+      {/* The start button sits beside UP NEXT, so a long topic never pushes it off the share. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className={UP_NEXT_CHIP}>UP NEXT</span>
+        {isFacilitator && (
           <Button
-            className="h-14 px-8 text-[17px]"
-            onClick={() => act('start_discussion', { p_board: state.board_id })}
+            className={`h-14 px-8 text-[17px] ${BUSY}`}
+            aria-disabled={disabled}
+            onClick={() => press.run('start_discussion', { p_board: state.board_id })}
           >
             Start the {formatClock(state.settings.discuss_s * 1000)} clock
           </Button>
-          <Button variant="ghost" onClick={() => act('revote', { p_board: state.board_id })}>
+        )}
+      </div>
+      <h1 ref={h1Ref} tabIndex={-1} dir="auto" className={`mt-3 ${FOCUS_TITLE}`}>
+        {next.text}
+      </h1>
+      <p className="mt-2 text-[17px] text-muted">
+        Raised by{' '}
+        <b className="text-ink">
+          <bdi>{next.author_name}</bdi>
+        </b>{' '}
+        · {plural(votes, 'vote')}
+      </p>
+      {isFacilitator ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button
+            variant="ghost"
+            className={BUSY}
+            aria-disabled={disabled}
+            onClick={() => press.run('revote', { p_board: state.board_id })}
+          >
             Re-vote remaining topics
           </Button>
-          <Button variant="ghost" onClick={wrapUp}>
+          <Button variant="ghost" className={BUSY} aria-disabled={disabled} onClick={onWrapUp}>
             Start wrap-up
           </Button>
         </div>
       ) : (
-        <p className="mt-6 text-[17px] font-bold" aria-live="polite">
+        <p className="mt-4 text-[17px] font-bold">
           Waiting for the facilitator to start the next topic.
         </p>
       )}
@@ -452,9 +651,21 @@ function ExtendPanel({
 }) {
   const { board, state, userId, act } = ctx
   const now = useNow(5000)
+  const panel = useRef<HTMLElement>(null)
   const round = board.data.extendRounds.find((r) => r.id === roundId)
+  const closed = round ? round.closed_at !== null : true
+  // The vote lasts 15 seconds. On a phone or at a high zoom it can open below the fold, so it is
+  // brought into view, unless someone is typing (an action), whose field would scroll away.
+  useEffect(() => {
+    const el = panel.current
+    if (!el || closed) return
+    const box = el.getBoundingClientRect()
+    const field = document.activeElement
+    const typing = field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement
+    if (!typing && (box.top < 0 || box.bottom > window.innerHeight))
+      el.scrollIntoView({ block: 'nearest' })
+  }, [roundId, closed])
   if (!round) return null
-  const closed = round.closed_at !== null
   // "Extend anyway" keeps the group's counts but sets the result, so the counts tell who decided.
   const groupExtended = extendOutcome(round.keep_count ?? 0, round.move_on_count ?? 0) === 'extend'
   const mine = board.data.extendVotes.find((v) => v.round_id === roundId && v.user_id === userId)
@@ -467,7 +678,11 @@ function ExtendPanel({
     isPresent(p.last_seen_at, now, board.offsetMs),
   ).length
   return (
-    <section aria-label="Extend vote" className="rounded-2xl border-2 border-teal bg-panel p-5">
+    <section
+      ref={panel}
+      aria-label="Extend vote"
+      className="rounded-2xl border-2 border-line-strong bg-panel p-5"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-[24px] font-extrabold">Keep talking about this?</h2>
         {/* Only the vote count is announced; the per-second countdown is not. */}
@@ -478,16 +693,19 @@ function ExtendPanel({
           {!closed && ` · closes in ${formatClock(roundLeft ?? 0)}`}
         </p>
       </div>
-      {/* Side by side when the stage column is wide enough, stacked when it is not. */}
+      {/* Side by side when the stage column is wide enough, stacked when it is not. Once the vote
+          closes the buttons stay focusable, so whoever cast the last vote keeps their place. */}
       <div className="mt-4 grid gap-2 @lg:grid-cols-3">
         {CHOICES.map((c) => (
           <button
             key={c.value}
             type="button"
-            disabled={closed}
+            aria-disabled={closed || undefined}
             aria-pressed={mine?.choice === c.value}
-            onClick={() => act('cast_extend_vote', { p_round: roundId, p_choice: c.value })}
-            className={`flex min-h-14 items-center justify-between gap-2 rounded-xl border-2 px-4 text-[17px] font-bold disabled:cursor-default ${mine?.choice === c.value ? 'border-teal bg-teal-soft' : 'border-line'}`}
+            onClick={() => {
+              if (!closed) void act('cast_extend_vote', { p_round: roundId, p_choice: c.value })
+            }}
+            className={`flex min-h-14 items-center justify-between gap-2 rounded-xl border-2 px-4 text-[17px] font-bold aria-disabled:cursor-default ${mine?.choice === c.value ? 'border-teal bg-teal-soft' : 'border-line'}`}
           >
             <span>
               {c.label}
@@ -496,18 +714,25 @@ function ExtendPanel({
               )}
             </span>
             {/* Tallies stay hidden until the round closes; nothing about them is in the page before then. */}
-            <span className="text-[22px] font-extrabold">{closed ? counts[c.value] : '?'}</span>
+            {closed ? (
+              <span className="text-[22px] font-extrabold">
+                {counts[c.value]}
+                <span className="sr-only"> {counts[c.value] === 1 ? 'vote' : 'votes'}</span>
+              </span>
+            ) : (
+              <span className="text-[22px] font-extrabold" aria-hidden="true">
+                ?
+              </span>
+            )}
           </button>
         ))}
       </div>
       {closed && (
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <p className="flex-1 text-[17px] font-bold">
-            {round.result !== 'extend'
-              ? 'The group chose to move on.'
-              : `${groupExtended ? 'The group chose to keep going' : 'The facilitator extended it'}: ${formatClock(state.settings.extend_s * 1000)} added.`}
-          </p>
-        </div>
+        <p className="mt-4 text-[17px] font-bold">
+          {round.result !== 'extend'
+            ? 'The group chose to move on.'
+            : `${groupExtended ? 'The group chose to keep going' : 'The facilitator extended it'}: the clock restarts at ${formatClock(state.settings.extend_s * 1000)}.`}
+        </p>
       )}
       {!closed && (
         <p className="mt-3 text-[14px] text-muted">
@@ -520,23 +745,49 @@ function ExtendPanel({
 
 /**
  * Add an action to a topic. On stage the topic's actions are listed underneath; between topics
- * only the form shows, as the last topic's actions are listed under it in Discussed.
+ * only the form shows, as the last topic's actions are listed under it in Discussed. The draft
+ * lives in Discuss, so the form for the same topic keeps it, and the focus, when it moves.
  */
 function ActionsFor({
   ctx,
-  topicId,
+  topic,
+  forms,
   label = 'Actions from this topic',
   list = true,
 }: {
   ctx: PhaseProps['ctx']
-  topicId: string
+  topic: Topic
+  forms: Forms
   label?: string
   list?: boolean
 }) {
   const { board, state, act } = ctx
-  const [text, setText] = useState('')
-  const [owner, setOwner] = useState('')
+  const topicId = topic.id
+  const { text, owner } = forms.drafts[topicId] ?? EMPTY_DRAFT
+  const textRef = useRef<HTMLInputElement>(null)
+  const ownerRef = useRef<HTMLInputElement>(null)
+  const { typing } = forms
+  // This form replaced the one someone was typing in (Next topic, a Move on result): focus
+  // returns to the same field, with the caret at the end, instead of the stage heading.
+  useEffect(() => {
+    const was = typing.current
+    const focused = document.activeElement
+    if (was?.topic !== topicId || (focused !== null && focused !== document.body)) return
+    const field = (was.field === 'text' ? textRef : ownerRef).current
+    field?.focus()
+    field?.setSelectionRange(field.value.length, field.value.length)
+  }, [typing, topicId])
   const actions = board.data.actions.filter((a) => a.topic_id === topicId)
+  const track = (field: 'text' | 'owner') => ({
+    onFocus: () => {
+      typing.current = { topic: topicId, field }
+      forms.setFocused(topicId)
+    },
+    onBlur: () => {
+      typing.current = null
+      forms.setFocused(null)
+    },
+  })
   async function add(e: FormEvent) {
     e.preventDefault()
     if (!text.trim()) return
@@ -547,26 +798,29 @@ function ActionsFor({
         p_owner_name: ownerName(owner),
         p_topic: topicId,
       })
-    ) {
-      setText('')
-      setOwner('')
-    }
+    )
+      forms.setDraft(topicId, EMPTY_DRAFT)
   }
   return (
     <div className="mt-5">
       <Eyebrow>{label}</Eyebrow>
-      <form onSubmit={add} className="mt-2 flex flex-wrap gap-2">
+      <form onSubmit={add} data-action-form className="mt-2 flex flex-wrap gap-2">
         <input
+          ref={textRef}
           aria-label="New action"
           value={text}
           maxLength={140}
-          onChange={(e) => setText(e.target.value)}
+          dir="auto"
+          onChange={(e) => forms.setDraft(topicId, { text: e.target.value, owner })}
+          {...track('text')}
           placeholder="Add an action"
-          className="h-12 min-w-0 grow basis-60 rounded-xl border-2 border-line bg-panel px-3 text-[16px]"
+          className="h-12 min-w-0 grow basis-60 rounded-xl border-2 border-line-strong bg-panel px-3 text-[16px]"
         />
         <OwnerField
+          inputRef={ownerRef}
           value={owner}
-          onChange={setOwner}
+          onChange={(v) => forms.setDraft(topicId, { text, owner: v })}
+          {...track('owner')}
           people={board.data.participants}
           className="h-12 rounded-xl"
         />

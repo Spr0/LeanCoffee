@@ -14,10 +14,49 @@ const SIZES = [
 // A topic near the 160-character limit.
 const LONGEST =
   'How do we decide which customer requests become roadmap items when sales, support and product all keep different lists and nobody owns the final call on them?'
+// A link with no spaces, as people paste them into actions.
+const LINK =
+  'https://confluence.example.com/display/ENGINEERING/Customer-Request-Intake-Process-2026'
 const region = (page: Page, name: string) => page.getByRole('region', { name, exact: true })
 const btn = (page: Page, name: string) => page.getByRole('button', { name, exact: true })
 const themeToggle = (page: Page) =>
   page.getByRole('button', { name: /Switch to (dark|light) mode/ })
+
+/**
+ * Samples the board every 50 ms while `during` runs and returns any moment it contradicted
+ * itself: the topic DISCUSSING NOW also listed in a column, or an UP NEXT that is not the first
+ * card in To discuss (wave1 RT-3, SCALE-07, POL-06).
+ */
+async function contradictions(page: Page, during: () => Promise<void>) {
+  await page.evaluate(() => {
+    const w = window as unknown as { odd: string[]; sampler: number }
+    w.odd = []
+    w.sampler = window.setInterval(() => {
+      const stage = document.querySelector('section[aria-label="Discussing"]')
+      const h1 = stage?.querySelector('h1')?.textContent ?? ''
+      const cards = (name: string) =>
+        [
+          ...document.querySelectorAll(
+            `section[aria-label="${name}"] li p:not([class*="tracking"])`,
+          ),
+        ].map((p) => p.textContent)
+      const todo = cards('To discuss')
+      if (stage?.textContent?.includes('DISCUSSING NOW')) {
+        if ([...todo, ...cards('Discussed')].includes(h1))
+          w.odd.push(`on stage and in a column: ${h1}`)
+      } else if (stage?.textContent?.includes('UP NEXT') && todo[0] !== h1) {
+        w.odd.push(`UP NEXT ${h1} but first in To discuss: ${todo[0]}`)
+      }
+    }, 50)
+  })
+  await during()
+  await page.waitForTimeout(2500)
+  return page.evaluate(() => {
+    const w = window as unknown as { odd: string[]; sampler: number }
+    window.clearInterval(w.sampler)
+    return [...new Set(w.odd)]
+  })
+}
 
 /** axe in light and dark, ending in the theme it started in (prompt 7.4). */
 async function axeBoth(page: Page, what: string) {
@@ -108,7 +147,6 @@ test('the Discuss board: progress, stage and history on one screen', async ({ br
       btn(fran, `Add a dot to "${topics[i]?.[1]}"`).click(),
     ])
   for (const page of [fran, pat]) await btn(page, "I'm done").click()
-  await expect(pat.getByRole('heading', { name: 'Here is the agenda' })).toBeVisible()
   await btn(fran, 'Start discussing').click()
 
   // Between topics the stage shows what is up next; the facilitator starts the clock.
@@ -116,7 +154,8 @@ test('the Discuss board: progress, stage and history on one screen', async ({ br
   await expect(region(pat, 'Discussing')).toContainText('UP NEXT')
   await expect(pat.getByRole('heading', { level: 1, name: onboard })).toBeVisible()
   await expect(pat.getByText('0 of 7 discussed')).toBeVisible()
-  await btn(fran, 'Start the 5:00 clock').click()
+  // The board goes straight from Up next to the topic on stage, never through a mix of the two.
+  expect(await contradictions(pat, () => btn(fran, 'Start the 5:00 clock').click())).toEqual([])
 
   // Progress is on screen during the discussion, for everyone.
   await expect(region(pat, 'Discussing')).toContainText('DISCUSSING NOW')
@@ -127,25 +166,53 @@ test('the Discuss board: progress, stage and history on one screen', async ({ br
   await pat.getByLabel('Action owner').fill('Maya')
   await btn(pat, 'Add action').click()
   await expect(region(fran, 'Discussing')).toContainText('Draft a two-week onboarding checklist')
+  // A long link and a 24-character owner, the server's limit, on the same topic.
+  await pat.getByLabel('New action').fill(`Read ${LINK}`)
+  await pat.getByLabel('Action owner').fill('Maximiliana Featherstone')
+  await btn(pat, 'Add action').click()
+  await expect(region(pat, 'Discussing')).toContainText('Maximiliana Featherstone')
+  // Pat is half-way through another action when the topic leaves the stage.
+  await pat.getByLabel('New action').fill('Send the checklist to')
 
   // Next topic: the card moves to Discussed with its time, votes and action; focus goes to the
   // stage heading, as the pressed button has gone.
-  await btn(fran, 'Next topic').click()
+  expect(await contradictions(pat, () => btn(fran, 'Next topic').click())).toEqual([])
   const done = region(pat, 'Discussed')
   await expect(done.getByRole('listitem').first()).toContainText(onboard)
   await expect(done.getByRole('listitem').first()).toContainText('2 votes')
   await expect(done).toContainText('Draft a two-week onboarding checklist · Maya')
-  await expect(done).toContainText('1 action in all')
+  await expect(done).toContainText('2 actions in all')
   await expect(fran.getByRole('heading', { level: 1, name: ai })).toBeFocused()
   await expect(pat.getByRole('status').filter({ hasText: 'moved to Discussed after' })).toHaveCount(
     1,
   )
+  // Pat's draft is still there, in the form for the same topic, with the focus.
+  await expect(pat.getByLabel('New action')).toHaveValue('Send the checklist to')
+  await expect(pat.getByLabel('New action')).toBeFocused()
+  await pat.keyboard.type(' Maya')
+  await btn(pat, 'Add action').click()
+  await expect(done).toContainText('Send the checklist to Maya')
+  await expect(done).toContainText('3 actions in all')
+  // Neither the link nor the long owner widens the cards: nothing scrolls sideways.
+  for (const page of [fran, pat]) {
+    for (const name of ['To discuss', 'Discussed']) {
+      const [scroll, client] = await region(page, name).evaluate((el) => [
+        el.scrollWidth,
+        el.clientWidth,
+      ])
+      expect(scroll, `${name} scrolls sideways`).toBeLessThanOrEqual(client)
+    }
+  }
 
   // An extension by vote, then the mid-topic board for the screenshots.
   await btn(fran, 'Start the 5:00 clock').click()
   await btn(fran, 'Call vote now').click()
   for (const page of [fran, pat]) await page.getByRole('button', { name: /^Keep going/ }).click()
-  await expect(pat.getByText('The group chose to keep going: 3:00 added.')).toBeVisible()
+  await expect(
+    pat.getByText('The group chose to keep going: the clock restarts at 3:00.'),
+  ).toBeVisible()
+  // Whoever cast the last vote keeps their place on the button.
+  await expect(pat.getByRole('button', { name: /^Keep going/ })).toBeFocused()
   await expect(pat.getByText('Extended ×1')).toBeVisible()
   await pat.getByLabel('New action').fill('Compare meeting-notes tools on one real call')
   await pat.getByLabel('Action owner').fill('Leo')
@@ -194,6 +261,21 @@ test('the Discuss board: progress, stage and history on one screen', async ({ br
       expect(sizes.digits).toBeGreaterThanOrEqual(64)
     }
     if (text.length <= 100) await expect(btn(fran, 'Next topic')).toBeInViewport({ ratio: 1 })
+    if (text === LONGEST) {
+      // The extend vote with the longest topic: the choices stay on the share for everyone.
+      await btn(fran, 'Call vote now').click()
+      for (const page of [fran, pat]) {
+        await page.evaluate(() => window.scrollTo(0, 0))
+        for (const name of [/^Keep going/, /^Move on/])
+          await expect(page.getByRole('button', { name })).toBeInViewport({ ratio: 1 })
+      }
+      await fran.screenshot({
+        path: 'test-results/screens/board-stage/long-160-vote-facilitator-light-1280x720.png',
+      })
+      for (const page of [fran, pat])
+        await page.getByRole('button', { name: /^Keep going/ }).click()
+      await expect(region(pat, 'Extend vote')).toContainText('the clock restarts at 3:00')
+    }
     await fran.screenshot({
       path: `test-results/screens/board-stage/long-${text.length}-facilitator-light-1280x720.png`,
     })
@@ -204,6 +286,8 @@ test('the Discuss board: progress, stage and history on one screen', async ({ br
   await fran.getByRole('textbox', { name: 'Edit topic' }).fill(ai)
   await fran.getByRole('textbox', { name: 'Edit topic' }).press('Enter')
   await expect(pat.getByRole('heading', { level: 1, name: ai })).toBeVisible()
+  for (const page of [fran, pat])
+    await expect(region(page, 'Extend vote')).toHaveCount(0, { timeout: 20_000 })
 
   // Phones: the stage first, then To discuss, then Discussed; nothing scrolls sideways.
   for (const [page, who] of [
@@ -281,12 +365,16 @@ test('the Discuss board: progress, stage and history on one screen', async ({ br
   await downloads.getByRole('button', { name: 'Done' }).click()
   await expect(btn(pat, 'Downloads')).toBeFocused()
 
-  // Between topics: the extended topic is in Discussed with its action underneath.
-  await btn(fran, 'Next topic').click()
-  await expect(done).toContainText('extended once')
+  // Between topics: the extended topic is in Discussed with its action underneath. A double-click
+  // moves one topic and shows no error.
+  await btn(fran, 'Next topic').dblclick()
+  // Extended by the vote mid-topic and again during the long-topic vote.
+  await expect(done).toContainText('extended twice')
   await expect(done).toContainText('Compare meeting-notes tools on one real call · Leo')
-  await expect(done).toContainText('2 actions in all')
+  await expect(done).toContainText('4 actions in all')
   await expect(pat.getByText('Waiting for the facilitator to start the next topic.')).toBeVisible()
+  await expect(fran.getByText('2 of 7 discussed')).toBeVisible()
+  await expect(fran.getByRole('alert')).toHaveCount(0)
   await shoot(fran, 'between-topics-facilitator')
   await shoot(pat, 'between-topics-participant')
 
@@ -334,6 +422,17 @@ test('the Discuss board: progress, stage and history on one screen', async ({ br
   ).toContainText(async)
   await expect(queue.getByRole('list').first()).toBeFocused()
 
+  // A topic near the limit as Up next: the start button stays on the share, beside UP NEXT.
+  await queue.getByRole('button', { name: `Edit "${sayNo}"` }).click()
+  await edit.fill(LONGEST)
+  await edit.press('Enter')
+  await expect(fran.getByRole('heading', { level: 1, name: LONGEST })).toBeVisible()
+  await fran.evaluate(() => window.scrollTo(0, 0))
+  await expect(btn(fran, 'Start the 5:00 clock')).toBeInViewport({ ratio: 1 })
+  await queue.getByRole('button', { name: `Edit "${LONGEST}"` }).click()
+  await edit.fill(sayNo)
+  await edit.press('Enter')
+
   // An early vote where everyone moves on: the result stays between topics, with the
   // facilitator's override.
   await expect(region(fran, 'Discussing')).toContainText(sayNo)
@@ -346,6 +445,12 @@ test('the Discuss board: progress, stage and history on one screen', async ({ br
   await expect(region(pat, 'Discussing')).toContainText('UP NEXT')
   await expect(pat.getByRole('button', { name: /anyway/ })).toHaveCount(0)
   await expect(btn(fran, 'Extend 3:00 anyway')).toBeVisible()
+  // Focus is on the result, so Extend anyway is the next Tab stop.
+  await expect(
+    region(fran, 'Discussing').locator('p', { hasText: 'The group chose to move on.' }),
+  ).toBeFocused()
+  await fran.keyboard.press('Tab')
+  await expect(btn(fran, 'Extend 3:00 anyway')).toBeFocused()
   await expect(done.getByRole('listitem').filter({ hasText: sayNo })).toHaveCount(1)
   await shoot(fran, 'moved-on-facilitator')
   await shoot(pat, 'moved-on-participant')

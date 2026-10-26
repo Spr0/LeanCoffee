@@ -1,5 +1,6 @@
 import type { BoardState, ExtendRound, Topic, Vote } from './types'
 import {
+  boardAgrees,
   boardMoves,
   boardTotals,
   discussProgress,
@@ -119,10 +120,12 @@ describe('Discuss board', () => {
     expect(stageRingSize('Short', true, 300_000)).toBe(200)
   })
 
-  it('gives a clock of 10:00 or more the 240 px ring, whatever else is on stage', () => {
+  it('gives a clock that shows 10:00 or more the 240 px ring, whatever else is on stage', () => {
     expect(stageRingSize('Short', false, 600_000)).toBe(240)
     expect(stageRingSize('x'.repeat(160), true, 599_500)).toBe(240)
     expect(stageRingSize('Short', false, 599_000)).toBe(220)
+    // A 10:00 discussion is back to the long topic's ring once the clock shows 9:59.
+    expect(stageRingSize('x'.repeat(160), false, 599_000)).toBe(200)
   })
 
   it('keeps the dots that ranked discussed and skipped topics after a re-vote', () => {
@@ -217,11 +220,20 @@ describe('Discuss board', () => {
     it('says who extended a topic: the group, or the facilitator against the vote', () => {
       const was = moment(before.topics, [round('a', null, null, false)])
       expect(moves(was, moment(before.topics, [round('a', 'extend', [3, 0, 1])]))).toBe(
-        'The group chose to keep going on "a": 3:00 added.',
+        'The group chose to keep going on "a": the clock restarts at 3:00.',
       )
       expect(moves(was, moment(before.topics, [round('a', 'extend', [0, 1, 3])]))).toBe(
-        'The facilitator extended "a": 3:00 added.',
+        'The facilitator extended "a": the clock restarts at 3:00.',
       )
+    })
+
+    it('says a vote has opened, and for how long', () => {
+      const open = round('a', null, null, false)
+      expect(moves(before, moment(before.topics, [open]))).toBe(
+        'Vote now: keep talking about "a"? Results in 15 seconds.',
+      )
+      // Not again as votes come in.
+      expect(moves(moment(before.topics, [open]), moment(before.topics, [open]))).toBe('')
     })
 
     it('says when Extend anyway brings a topic back on stage', () => {
@@ -230,9 +242,58 @@ describe('Discuss board', () => {
         [round('a', 'move_on', [0, 1, 3])],
       )
       const after = moment(before.topics, [round('a', 'extend', [0, 1, 3])])
-      expect(moves(was, after)).toBe(
-        'The facilitator extended "a": 3:00 added. Now discussing "a".',
-      )
+      // One message: the topic is named once, not again as it restarts.
+      expect(moves(was, after)).toBe('The facilitator extended "a": the clock restarts at 3:00.')
+    })
+  })
+
+  describe('whether the tables agree', () => {
+    const at = (id: string, status: Topic['status']) => ({ ...topic(id), status })
+    const roundOn = (topic_id: string, over: Partial<ExtendRound> = {}): ExtendRound => ({
+      id: `r-${topic_id}`,
+      board_id: 'b',
+      topic_id,
+      opened_at: '2026-10-25T10:00:00Z',
+      closes_at: '2026-10-25T10:00:15Z',
+      closed_at: null,
+      votes_cast: 0,
+      keep_count: null,
+      neutral_count: null,
+      move_on_count: null,
+      result: null,
+      ...over,
+    })
+    const on = (id: string | null) => ({ current_topic_id: id })
+
+    it('agrees between topics and while a topic is on stage', () => {
+      expect(boardAgrees(on(null), [at('a', 'discussed'), at('b', 'open')], [])).toBe(true)
+      expect(boardAgrees(on('b'), [at('a', 'discussed'), at('b', 'discussing')], [])).toBe(true)
+      expect(boardAgrees(on('b'), [at('b', 'discussing')], [roundOn('b')])).toBe(true)
+    })
+
+    it('disagrees while the stage and the topics are a change apart', () => {
+      // Start the clock: the topics first, then the stage.
+      expect(boardAgrees(on(null), [at('a', 'discussing')], [])).toBe(false)
+      expect(boardAgrees(on('a'), [at('a', 'open')], [])).toBe(false)
+      // Next topic: the stage cleared or moved on, the topic still discussing.
+      expect(boardAgrees(on('b'), [at('a', 'discussing'), at('b', 'open')], [])).toBe(false)
+    })
+
+    it('disagrees while the extend votes are a change behind', () => {
+      // The topic left the stage while its vote still looks open.
+      expect(boardAgrees(on(null), [at('a', 'discussed')], [roundOn('a')])).toBe(false)
+      // Extend anyway brought it back while its result still reads Move on.
+      const movedOn = roundOn('a', {
+        closed_at: '2026-10-25T10:00:15Z',
+        keep_count: 0,
+        neutral_count: 0,
+        move_on_count: 2,
+        result: 'move_on',
+      })
+      expect(boardAgrees(on('a'), [at('a', 'discussing')], [movedOn])).toBe(false)
+      expect(
+        boardAgrees(on('a'), [at('a', 'discussing')], [{ ...movedOn, result: 'extend' }]),
+      ).toBe(true)
     })
   })
 })
