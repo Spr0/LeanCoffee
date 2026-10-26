@@ -201,6 +201,32 @@ describe('useBoard', () => {
     expect(db.reads).toEqual(['actions'])
   })
 
+  it('lists take-aways in the order their authors joined, not by their random ids', async () => {
+    db.rows.participants = [
+      { id: 'p1', user_id: 'me', board_id: 'b1' },
+      { id: 'p2', user_id: 'pat', board_id: 'b1' },
+      { id: 'p3', user_id: 'sam', board_id: 'b1' },
+    ]
+    db.rows.takeaways = [
+      { id: '1', user_id: 'gone', author_name: 'Gone' },
+      { id: '2', user_id: 'sam', author_name: 'Sam' },
+      { id: '3', user_id: 'me', author_name: 'Me' },
+      { id: '4', user_id: 'pat', author_name: 'Pat' },
+    ]
+    const { result } = await mount()
+    const names = () => result.current.data.takeaways.map((t) => t.author_name)
+    expect(names()).toEqual(['Me', 'Pat', 'Sam', 'Gone'])
+
+    // A new one lands in its author's place, wherever its id sorts.
+    db.rows.takeaways = [
+      { id: '2', user_id: 'sam', author_name: 'Sam' },
+      { id: '9', user_id: 'pat', author_name: 'Pat' },
+    ]
+    const handler = db.handlers.find((h) => h.table === 'takeaways')
+    act(() => handler?.run({ eventType: 'INSERT' }))
+    await waitFor(() => expect(names()).toEqual(['Pat', 'Sam']))
+  })
+
   it('tries a failed board read again instead of staying on Loading', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {

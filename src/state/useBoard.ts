@@ -1,5 +1,5 @@
 import type { RealtimePostgresChangesPayload, RealtimeSystemPayload } from '@supabase/supabase-js'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { coalesce } from '../lib/coalesce'
 import { onNotMember, rpc, supabase } from '../lib/supabase'
 import { measureOffset } from '../lib/time'
@@ -40,7 +40,8 @@ const KEYS: Record<Table, keyof BoardData> = {
 const TABLES = Object.keys(KEYS) as Table[]
 /**
  * Rows come in the order they were made, with the id breaking ties, so every browser and the Word
- * and Excel files list actions alike (the files sort the same way).
+ * and Excel files list actions alike (the files sort the same way). Take-aways record no time, so
+ * they follow the people instead (inPeopleOrder).
  */
 const MADE_AT: Partial<Record<Table, string>> = {
   participants: 'joined_at',
@@ -61,6 +62,17 @@ const EMPTY: BoardData = {
 }
 
 type Row = Record<string, unknown>
+
+/**
+ * Take-aways in the order their authors joined, as the People list has them, so a new one lands
+ * in a predictable place on every screen and in the files. The table records no time, so its rows
+ * would otherwise come in the order of their random ids. Authors no longer on the board come last.
+ */
+export function inPeopleOrder(takeaways: Takeaway[], participants: Participant[]): Takeaway[] {
+  const place = new Map(participants.map((p, i) => [p.user_id, i]))
+  const at = (t: Takeaway) => place.get(t.user_id) ?? participants.length
+  return takeaways.slice().sort((a, b) => at(a) - at(b))
+}
 
 /**
  * Board state columns whose change needs other tables reloaded with the state. Most change which
@@ -375,5 +387,11 @@ export function useBoard(boardId: string): UseBoard {
     }
   }, [boardId, loaders])
 
-  return { data, loaded, gone, connection, offsetMs, reload }
+  const takeaways = useMemo(
+    () => inPeopleOrder(data.takeaways, data.participants),
+    [data.takeaways, data.participants],
+  )
+  const ordered = useMemo(() => ({ ...data, takeaways }), [data, takeaways])
+
+  return { data: ordered, loaded, gone, connection, offsetMs, reload }
 }

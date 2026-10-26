@@ -17,7 +17,7 @@ import {
   TextRun,
   WidthType,
 } from 'docx'
-import { mss, type ExportModel, type ExportTopic } from './model'
+import { leftNote, mss, type ExportModel, type ExportTopic } from './model'
 import { EXPORT_COLORS as C } from './palette'
 import { xmlSafe } from './sanitize'
 
@@ -193,11 +193,8 @@ function actionsTable(m: ExportModel): Table {
 
 /** "(1 vote; skipped after 0:05)" and the like, for a topic that was not discussed. */
 function notDiscussedNote(n: ExportTopic): string {
-  const parts = [plural(n.votes, 'vote')]
-  if (n.status === 'Skipped')
-    parts.push(n.timeSpentMs > 0 ? `skipped after ${mss(n.timeSpentMs)}` : 'skipped')
-  if (n.status === 'Partly discussed') parts.push(`partly discussed, ${mss(n.timeSpentMs)}`)
-  return `(${parts.join('; ')})`
+  const note = leftNote(n.status, n.timeSpentMs)
+  return `(${[plural(n.votes, 'vote'), ...(note ? [note] : [])].join('; ')})`
 }
 
 /** Word summary: US Letter, 1 inch margins, Calibri 11, real heading styles and a real table. */
@@ -273,7 +270,13 @@ export function buildDocument(m: ExportModel): Document {
   )
   if (m.notDiscussed.length === 0)
     children.push(
-      new Paragraph(m.current ? 'No other topics are left.' : 'Every topic was discussed.'),
+      new Paragraph(
+        m.all.length === 0
+          ? 'No topics were added.'
+          : m.current
+            ? 'No other topics are left.'
+            : 'Every topic was discussed.',
+      ),
     )
   for (const n of m.notDiscussed) {
     children.push(

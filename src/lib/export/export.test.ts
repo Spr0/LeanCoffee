@@ -10,7 +10,7 @@ import { rpc } from '../supabase'
 import type { BoardState, Topic } from '../types'
 import { buildDocument, isRtl } from './docx'
 import { serverNow } from './download'
-import { buildModel } from './model'
+import { buildModel, leftNote, topicLeftNote } from './model'
 import { cellText, exportFilename, xmlSafe } from './sanitize'
 import { buildWorkbook } from './xlsx'
 
@@ -182,6 +182,20 @@ describe('export model', () => {
     expect(m.minutes).toBe(71)
     expect(m.people).toBe(3)
   })
+  it('still counts people removed after they took part', () => {
+    // The facilitator removed Dev and Maya after the session; their topics, dots and take-aways
+    // stay on the board, and so do they in the count.
+    const data = sample()
+    data.participants = data.participants.filter((p) => p.user_id === 'Ana')
+    expect(buildModel(data, new Date('2026-10-24T16:30:00Z')).people).toBe(3)
+    // Someone removed before doing anything is not counted.
+    const empty = sample()
+    empty.topics = []
+    empty.votes = []
+    empty.takeaways = []
+    empty.participants = empty.participants.slice(0, 2)
+    expect(buildModel(empty, new Date('2026-10-24T16:30:00Z')).people).toBe(2)
+  })
   it('omits passed take-aways', () => {
     expect(m.takeaways).toEqual([{ name: 'Ana', text: '@everyone read the doc' }])
   })
@@ -322,6 +336,20 @@ describe('export model on a live board', () => {
       status: 'Not discussed',
       timeSpentMs: 0,
     })
+  })
+
+  it('describes what happened to a topic left over in the same words as the Word file', () => {
+    const byId = new Map(midDiscuss().topics.map((t) => [t.id, t]))
+    const note = (id: string) => {
+      const t = byId.get(id)
+      return t ? topicLeftNote(t) : undefined
+    }
+    expect(note('q1')).toBeNull()
+    expect(note('q2')).toBe('partly discussed, 0:07')
+    expect(note('s1')).toBe('skipped after 0:05')
+    expect(note('t1')).toBeNull()
+    expect(leftNote('Skipped', 300)).toBe('skipped')
+    expect(leftNote('Partly discussed', 64_600)).toBe('partly discussed, 1:05')
   })
 
   it('measures the session to the time it is given (the server-corrected clock)', () => {
@@ -548,6 +576,16 @@ describe('Word document', () => {
       'Deferred earlier (5 votes; partly discussed, 0:07)',
       'Skipped once (4 votes; skipped after 0:05)',
     ])
+  })
+
+  it('says no topics were added on a board ended before anyone wrote one', async () => {
+    const data = sample()
+    data.topics = []
+    data.votes = []
+    data.actions = []
+    const text = paragraphs((await documentXml(buildModel(data, new Date()))).xml)
+    expect(text[text.indexOf('Not discussed') + 1]).toBe('No topics were added.')
+    expect(text).not.toContain('Every topic was discussed.')
   })
 
   it('groups actions under each topic once, with banding and Other actions last', async () => {
