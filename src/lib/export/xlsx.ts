@@ -3,8 +3,17 @@ import type { ExportModel } from './model'
 import { EXPORT_COLORS as C } from './palette'
 import { cellText } from './sanitize'
 
-/** `max` caps the column width in characters; longer text wraps. */
-type Col = { header: string; key: string; kind: 'text' | 'number' | 'time'; max?: number }
+/**
+ * `max` caps the column width in characters; longer text wraps, unless `wrap` is false: then the
+ * cell keeps its full text on one line (shown in full when selected).
+ */
+type Col = {
+  header: string
+  key: string
+  kind: 'text' | 'number' | 'time'
+  max?: number
+  wrap?: boolean
+}
 
 const argb = (hex: string) => `FF${hex}`
 const solid = (hex: string): ExcelJS.Fill => ({
@@ -44,7 +53,8 @@ function addSheet(
         c.kind === 'text'
           ? cellText(String(v))
           : c.kind === 'time'
-            ? Number(v) / 86_400_000
+            ? // Whole seconds as a fraction of a day, so every reader shows what the board shows.
+              Math.round(Number(v) / 1000) / 86_400
             : Number(v)
     }
     ws.addRow(values)
@@ -54,11 +64,12 @@ function addSheet(
     const longest = Math.max(c.header.length, ...rows.map((r) => String(r[c.key] ?? '').length))
     col.width = Math.min(c.max ?? 50, Math.max(8, longest + 2))
     col.alignment = {
-      wrapText: true,
+      wrapText: c.wrap ?? true,
       vertical: 'top',
       horizontal: c.kind === 'text' ? 'left' : 'center',
     }
-    if (c.kind === 'time') col.numFmt = 'mm:ss'
+    // Elapsed minutes: 62:05 stays 62:05 rather than wrapping to 02:05 as mm:ss would.
+    if (c.kind === 'time') col.numFmt = '[m]:ss'
   })
   // Header row: accent fill, bold on-accent text. Cell fills (not a row fill) so the colour stops
   // at the last column.
@@ -96,11 +107,11 @@ export function buildWorkbook(m: ExportModel): ExcelJS.Workbook {
     wb,
     'Topics',
     [
-      { header: 'Rank', key: 'rank', kind: 'number' },
+      { header: '#', key: 'rank', kind: 'number' },
       { header: 'Topic', key: 'text', kind: 'text', max: 50 },
       { header: 'Author', key: 'author', kind: 'text', max: 24 },
       { header: 'Votes', key: 'votes', kind: 'number' },
-      { header: 'Status', key: 'status', kind: 'text' },
+      { header: 'Status', key: 'status', kind: 'text', max: 18 },
       { header: 'Time spent', key: 'time', kind: 'time' },
       { header: 'Extensions', key: 'extensions', kind: 'number' },
     ],
@@ -113,8 +124,11 @@ export function buildWorkbook(m: ExportModel): ExcelJS.Workbook {
       { header: '#', key: 'n', kind: 'number' },
       { header: 'Action', key: 'text', kind: 'text', max: 50 },
       { header: 'Owner', key: 'owner', kind: 'text', max: 24 },
-      { header: 'Topic', key: 'topic', kind: 'text', max: 40 },
       { header: 'Done', key: 'done', kind: 'text' },
+      // Every row names its topic so the sheet can be filtered and sorted, but on one line, last,
+      // where a long one runs into the empty cells beside it: wrapped on each of its actions it
+      // filled pages. The Topics sheet has it in full.
+      { header: 'Topic', key: 'topic', kind: 'text', max: 60, wrap: false },
     ],
     m.actions.map((a, i) => ({
       n: i + 1,

@@ -20,9 +20,18 @@ export function cellText(text: string): string {
 
 const RESERVED = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i
 
-/** "{Board name} {YYYY-MM-DD}.{ext}", safe on Windows; falls back to "Lean Coffee {date}". */
+/** YYYY-MM-DD of the local calendar day, the same day the Word file prints. */
+export function localDay(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+/**
+ * "{Board name} {YYYY-MM-DD}.{ext}", safe on Windows; falls back to "Lean Coffee {date}". The date
+ * is the local day of `date` (the session's start), so it agrees with the date in the Word file.
+ */
 export function exportFilename(boardName: string, date: Date, ext: 'docx' | 'xlsx'): string {
-  const day = date.toISOString().slice(0, 10)
+  const day = localDay(date)
   let base = xmlSafe(boardName)
     .replace(/[<>:"/\\|?*\u0000-\u001F\u007F]/g, ' ')
     .replace(/\s+/g, ' ')

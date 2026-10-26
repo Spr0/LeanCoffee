@@ -17,7 +17,7 @@ import {
   TextRun,
   WidthType,
 } from 'docx'
-import { mss, type ExportModel } from './model'
+import { mss, type ExportModel, type ExportTopic } from './model'
 import { EXPORT_COLORS as C } from './palette'
 import { xmlSafe } from './sanitize'
 
@@ -34,9 +34,9 @@ function plural(n: number, word: string) {
 }
 
 /** Key facts under the title: one shaded row of four label/value cells. */
-function factsBox(m: ExportModel, longDate: string): Table {
+function factsBox(m: ExportModel): Table {
   const facts: [string, string][] = [
-    ['Date', longDate],
+    ['Date', m.dateText],
     ['People', String(m.people)],
     ['Session length', `${m.minutes} min`],
     ['Topics discussed', `${m.discussed.length} of ${m.all.length}`],
@@ -86,9 +86,13 @@ function factsBox(m: ExportModel, longDate: string): Table {
   })
 }
 
-/** Actions table: accent header row that repeats on every page, banded rows, a check for done. */
+/**
+ * Actions table, grouped by topic: each topic once, on a shaded row across the table, then its
+ * actions oldest first. Accent header row that repeats on every page, banded rows within
+ * each group, a check for done.
+ */
 function actionsTable(m: ExportModel): Table {
-  const widths = [720, 4140, 1800, 2700] // Done, Action, Owner, Topic; sums to CONTENT
+  const widths = [720, 6120, 2520] // Done, Action, Owner; sums to CONTENT
   const headRule = { style: BorderStyle.SINGLE, size: 4, color: C.accent }
   const head = (text: string, i: number) =>
     new TableCell({
@@ -108,6 +112,44 @@ function actionsTable(m: ExportModel): Table {
         new Paragraph({ alignment: center ? AlignmentType.CENTER : undefined, children: [run] }),
       ],
     })
+  // The topic row stays with its first action at a page break.
+  const topicRow = (topic: string) =>
+    new TableRow({
+      cantSplit: true,
+      children: [
+        new TableCell({
+          columnSpan: widths.length,
+          width: { size: CONTENT, type: WidthType.DXA },
+          shading: fill(C.soft),
+          borders: { top: rule, bottom: rule, left: rule, right: rule },
+          children: [
+            new Paragraph({
+              keepNext: true,
+              children: [new TextRun({ text: t(topic), bold: true, color: C.accent })],
+            }),
+          ],
+        }),
+      ],
+    })
+  const actionRow = (a: ExportModel['actions'][number], band: boolean) =>
+    new TableRow({
+      cantSplit: true,
+      children: [
+        cell(
+          0,
+          band,
+          new TextRun({
+            text: a.done ? CHECK : '',
+            bold: true,
+            color: C.accent,
+            font: 'Segoe UI Symbol',
+          }),
+          true,
+        ),
+        cell(1, band, new TextRun(t(a.text))),
+        cell(2, band, new TextRun(t(a.owner))),
+      ],
+    })
   return new Table({
     width: { size: CONTENT, type: WidthType.DXA },
     columnWidths: widths,
@@ -117,41 +159,27 @@ function actionsTable(m: ExportModel): Table {
       new TableRow({
         tableHeader: true,
         cantSplit: true,
-        children: ['Done', 'Action', 'Owner', 'Topic'].map(head),
+        children: ['Done', 'Action', 'Owner'].map(head),
       }),
-      ...m.actions.map((a, i) => {
-        const band = i % 2 === 1
-        return new TableRow({
-          cantSplit: true,
-          children: [
-            cell(
-              0,
-              band,
-              new TextRun({
-                text: a.done ? CHECK : '',
-                bold: true,
-                color: C.accent,
-                font: 'Segoe UI Symbol',
-              }),
-              true,
-            ),
-            cell(1, band, new TextRun(t(a.text))),
-            cell(2, band, new TextRun(t(a.owner))),
-            cell(3, band, new TextRun(t(a.topic))),
-          ],
-        })
-      }),
+      ...m.actionGroups.flatMap((g) => [
+        topicRow(g.topic),
+        ...g.actions.map((a, i) => actionRow(a, i % 2 === 1)),
+      ]),
     ],
   })
 }
 
+/** "(1 vote; skipped after 0:05)" and the like, for a topic that was not discussed. */
+function notDiscussedNote(n: ExportTopic): string {
+  const parts = [plural(n.votes, 'vote')]
+  if (n.status === 'Skipped')
+    parts.push(n.timeSpentMs > 0 ? `skipped after ${mss(n.timeSpentMs)}` : 'skipped')
+  if (n.status === 'Partly discussed') parts.push(`partly discussed, ${mss(n.timeSpentMs)}`)
+  return `(${parts.join('; ')})`
+}
+
 /** Word summary: US Letter, 1 inch margins, Calibri 11, real heading styles and a real table. */
 export function buildDocument(m: ExportModel): Document {
-  const longDate = m.date.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
   const children: (Paragraph | Table)[] = [
     // The key-facts box carries the date, people and length, so no summary line repeats them.
     new Paragraph({
@@ -159,7 +187,7 @@ export function buildDocument(m: ExportModel): Document {
       spacing: { after: 160 },
       children: [new TextRun(t(m.title))],
     }),
-    factsBox(m, longDate),
+    factsBox(m),
     new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun('Discussed')] }),
   ]
   if (m.discussed.length === 0) children.push(new Paragraph('No topics were discussed.'))
@@ -171,6 +199,25 @@ export function buildDocument(m: ExportModel): Document {
           new TextRun({ text: t(d.text), bold: true }),
           new TextRun({
             text: ` (${t(d.author)}; ${plural(d.votes, 'vote')}; ${mss(d.timeSpentMs)}; ${plural(d.extensions, 'extension')})`,
+          }),
+        ],
+      }),
+    )
+  }
+
+  // A file made mid-topic shows the topic on stage with its time so far.
+  const stage = m.current
+  if (stage) {
+    children.push(
+      new Paragraph({
+        heading: HeadingLevel.HEADING_1,
+        children: [new TextRun('Being discussed')],
+      }),
+      new Paragraph({
+        children: [
+          new TextRun({ text: t(stage.text), bold: true }),
+          new TextRun({
+            text: ` (${t(stage.author)}; ${plural(stage.votes, 'vote')}; ${mss(stage.timeSpentMs)} so far; ${plural(stage.extensions, 'extension')})`,
           }),
         ],
       }),
@@ -198,12 +245,15 @@ export function buildDocument(m: ExportModel): Document {
   children.push(
     new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun('Not discussed')] }),
   )
-  if (m.notDiscussed.length === 0) children.push(new Paragraph('Every topic was discussed.'))
+  if (m.notDiscussed.length === 0)
+    children.push(
+      new Paragraph(m.current ? 'No other topics are left.' : 'Every topic was discussed.'),
+    )
   for (const n of m.notDiscussed) {
     children.push(
       new Paragraph({
         bullet: { level: 0 },
-        children: [new TextRun(`${t(n.text)} (${plural(n.votes, 'vote')})`)],
+        children: [new TextRun(`${t(n.text)} ${notDiscussedNote(n)}`)],
       }),
     )
   }
